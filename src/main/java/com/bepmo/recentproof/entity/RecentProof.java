@@ -44,7 +44,11 @@ public class RecentProof {
     @Enumerated(EnumType.STRING)
     private RecentProofStatus status;
 
-    @Column(name = "uploaded_at", nullable = false)
+    // uploadedAt = thời điểm tạo record, dùng để tính Freshness score.
+    // Dùng @CreationTimestamp thay vì set thủ công trong service, tránh lệch giờ server/DB
+    // và tuân đúng convention "timestamp không set tay trong service".
+    @CreationTimestamp
+    @Column(name = "uploaded_at", nullable = false, updatable = false)
     private OffsetDateTime uploadedAt;
 
     @UpdateTimestamp

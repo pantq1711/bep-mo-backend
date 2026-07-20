@@ -19,13 +19,15 @@ public interface ProfileVideoRepository extends JpaRepository<ProfileVideo, Long
     List<ProfileVideo> findByRestaurantIdAndStatus(Long restaurantId, VideoStatus status);
 
     // Used when replacing a video: mark old ACTIVE as REPLACED
+    // Bind cả oldStatus/newStatus qua enum param — không dùng string literal trong JPQL,
+    // tránh lỗi nếu enum value đổi tên sau này (compiler sẽ báo lỗi thay vì fail lúc runtime)
     @Modifying
     @Query("""
         UPDATE ProfileVideo pv
-        SET pv.status = 'REPLACED'
+        SET pv.status = :newStatus
         WHERE pv.restaurantId = :restaurantId
           AND pv.type = :type
-          AND pv.status = 'ACTIVE'
+          AND pv.status = :oldStatus
         """)
-    int replaceActive(Long restaurantId, VideoType type);
+    int replaceActive(Long restaurantId, VideoType type, VideoStatus newStatus, VideoStatus oldStatus);
 }
