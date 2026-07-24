@@ -29,5 +29,24 @@ services:
       timeout: 5s
       retries: 5
 
+  app:
+    build: .
+    container_name: bepmo-app
+    ports:
+      - "8080:8080"
+    environment:
+      # Override datasource/redis host — application.yml default là localhost (chạy ngoài Docker),
+      # trong network của docker-compose phải trỏ vào tên service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bepmo
+      SPRING_DATA_REDIS_HOST: redis
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-bepmo-local-dev-secret-key-change-me-in-production-32bytes-min}
+      APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL:-admin@bepmo.local}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-ChangeMe123!}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
