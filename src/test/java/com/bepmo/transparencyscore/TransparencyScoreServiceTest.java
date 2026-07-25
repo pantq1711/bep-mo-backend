@@ -1,0 +1,187 @@
+package com.bepmo.transparencyscore;
+
+import com.bepmo.common.exception.AppException;
+import com.bepmo.ingredientsource.entity.IngredientSourceStatus;
+import com.bepmo.ingredientsource.repository.IngredientSourceRepository;
+import com.bepmo.profilevideo.entity.ProfileVideo;
+import com.bepmo.profilevideo.entity.VideoStatus;
+import com.bepmo.profilevideo.entity.VideoType;
+import com.bepmo.profilevideo.repository.ProfileVideoRepository;
+import com.bepmo.recentproof.entity.RecentProof;
+import com.bepmo.recentproof.entity.RecentProofStatus;
+import com.bepmo.recentproof.repository.RecentProofRepository;
+import com.bepmo.restaurant.repository.RestaurantRepository;
+import com.bepmo.transparencyscore.dto.TransparencyScoreDtos.TransparencyScoreResponse;
+import com.bepmo.transparencyscore.service.TransparencyScoreService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.http.HttpStatus;
+
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class TransparencyScoreServiceTest {
+
+    @Mock StringRedisTemplate redisTemplate;
+    @Mock ValueOperations<String, String> valueOperations;
+    @Mock RestaurantRepository restaurantRepository;
+    @Mock IngredientSourceRepository ingredientSourceRepository;
+    @Mock ProfileVideoRepository profileVideoRepository;
+    @Mock RecentProofRepository recentProofRepository;
+
+    @InjectMocks TransparencyScoreService transparencyScoreService;
+
+    @BeforeEach
+    void setUp() {
+        when(restaurantRepository.existsById(1L)).thenReturn(true);
+    }
+
+    @Test
+    @DisplayName("getScore: quán không tồn tại → 404, không đụng Redis")
+    void getScore_restaurantNotFound() {
+        when(restaurantRepository.existsById(999L)).thenReturn(false);
+
+        assertThatThrownBy(() -> transparencyScoreService.getScore(999L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+
+        verifyNoInteractions(redisTemplate);
+    }
+
+    @Test
+    @DisplayName("getScore: cache hit → trả thẳng giá trị cached, KHÔNG tính lại")
+    void getScore_cacheHit_returnsWithoutRecalculating() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn("55");
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+
+        assertThat(result.score()).isEqualTo(55);
+        assertThat(result.maxScore()).isEqualTo(100);
+        verifyNoInteractions(ingredientSourceRepository, profileVideoRepository, recentProofRepository);
+    }
+
+    @Test
+    @DisplayName("getScore: cache miss, quán chưa có gì → score = 0")
+    void getScore_cacheMiss_emptyRestaurant_scoreZero() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+
+        assertThat(result.score()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("getScore: cache miss, đủ 4 video + ingredient source + proof mới ≤7 ngày → 100 điểm")
+    void getScore_cacheMiss_fullCompleteness_freshProof_maxScore() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(true); // +15
+
+        List<ProfileVideo> activeVideos = List.of(
+                video(VideoType.INGREDIENT_RECEIVING), // +20
+                video(VideoType.KITCHEN),               // +20
+                video(VideoType.HYGIENE),               // +15
+                video(VideoType.PREP)                   // +10
+        );
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE)).thenReturn(activeVideos);
+
+        RecentProof freshProof = RecentProof.builder()
+                .uploadedAt(OffsetDateTime.now().minusDays(2)).build(); // <=7 ngày -> +20
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.of(freshProof));
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+
+        assertThat(result.score()).isEqualTo(100); // 15+20+20+15+10 + 20 = 100
+    }
+
+    @Test
+    @DisplayName("getScore: proof 10 ngày trước → Freshness +10 (khoảng 8-14 ngày)")
+    void getScore_freshness_between8And14Days() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE)).thenReturn(List.of());
+
+        RecentProof proof10DaysAgo = RecentProof.builder()
+                .uploadedAt(OffsetDateTime.now().minusDays(10)).build();
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.of(proof10DaysAgo));
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+
+        assertThat(result.score()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("getScore: proof >14 ngày → Freshness +0")
+    void getScore_freshness_after14Days() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE)).thenReturn(List.of());
+
+        RecentProof oldProof = RecentProof.builder()
+                .uploadedAt(OffsetDateTime.now().minusDays(20)).build();
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.of(oldProof));
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+
+        assertThat(result.score()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("getScore: cache miss → ghi lại cache với TTL dương (có jitter)")
+    void getScore_cacheMiss_setsCacheWithPositiveTtl() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE)).thenReturn(List.of());
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        transparencyScoreService.getScore(1L);
+
+        verify(valueOperations).set(eq("score:restaurant:1"), eq("0"), argThat((Duration d) -> d.getSeconds() > 0));
+    }
+
+    @Test
+    @DisplayName("evictCache: xoá đúng key theo restaurantId")
+    void evictCache_deletesCorrectKey() {
+        transparencyScoreService.evictCache(1L);
+
+        verify(redisTemplate).delete("score:restaurant:1");
+    }
+
+    private ProfileVideo video(VideoType type) {
+        return ProfileVideo.builder().restaurantId(1L).type(type).status(VideoStatus.ACTIVE).build();
+    }
+}
