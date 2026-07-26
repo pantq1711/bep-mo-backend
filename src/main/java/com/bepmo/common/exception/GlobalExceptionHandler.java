@@ -1,6 +1,7 @@
 package com.bepmo.common.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -22,10 +23,10 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     public record ErrorResponse(
-        int status,
-        String error,
-        String message,
-        OffsetDateTime timestamp
+            int status,
+            String error,
+            String message,
+            OffsetDateTime timestamp
     ) {}
 
     // ── Business logic errors ─────────────────────────────────────────────────
@@ -91,6 +92,18 @@ public class GlobalExceptionHandler {
                 "Content-Type '" + ex.getContentType() + "' is not supported. Use application/json");
     }
 
+    // ── 409: Race condition đụng UNIQUE constraint ở DB ───────────────────────
+    // Ví dụ: 2 request đăng ký cùng email, hoặc 2 request tạo restaurant cùng owner_id
+    // gửi gần như đồng thời — cả 2 đều pass qua check existsBy...() ở application layer
+    // trước khi DB kịp ràng buộc UNIQUE. Không có handler này thì request thua cuộc sẽ
+    // rơi vào handleGeneric() và trả 500, trong khi bản chất là 409 Conflict.
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.warn("Data integrity violation (khả năng race condition đụng unique constraint): {}", ex.getMessage());
+        return buildResponse(HttpStatus.CONFLICT, "Request conflicts with existing data. Please try again.");
+    }
+
     // ── 500: Fallback — không lộ stack trace ra ngoài ─────────────────────────
 
     @ExceptionHandler(Exception.class)
@@ -103,7 +116,7 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ErrorResponse> buildResponse(HttpStatus status, String message) {
         return ResponseEntity.status(status).body(
-            new ErrorResponse(status.value(), status.getReasonPhrase(), message, OffsetDateTime.now())
+                new ErrorResponse(status.value(), status.getReasonPhrase(), message, OffsetDateTime.now())
         );
     }
 }
