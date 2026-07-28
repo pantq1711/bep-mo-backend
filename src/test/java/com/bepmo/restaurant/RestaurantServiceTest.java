@@ -120,6 +120,26 @@ class RestaurantServiceTest {
     }
 
     @Test
+    @DisplayName("getMyRestaurant: owner đã có quán → trả về profile")
+    void getMyRestaurant_success() {
+        when(restaurantRepository.findByOwnerId(10L)).thenReturn(Optional.of(restaurant));
+
+        RestaurantProfile result = restaurantService.getMyRestaurant(10L);
+
+        assertThat(result.id()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("getMyRestaurant: owner chưa có quán → 404 NOT_FOUND")
+    void getMyRestaurant_notFound() {
+        when(restaurantRepository.findByOwnerId(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> restaurantService.getMyRestaurant(999L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
     @DisplayName("list: cap page size tối đa 50 dù client request lớn hơn")
     void list_capsPageSize() {
         when(restaurantRepository.findByStatus(eq(RestaurantStatus.ACTIVE), any()))

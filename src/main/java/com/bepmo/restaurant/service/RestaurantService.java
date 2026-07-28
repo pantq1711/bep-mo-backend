@@ -70,6 +70,16 @@ public class RestaurantService {
         return toProfile(restaurant);
     }
 
+    // Owner tra "quán của tôi" — cần cho frontend Tuần 8 quyết định điều hướng:
+    // chưa có quán -> màn hình tạo hồ sơ lần đầu; đã có -> dashboard quản lý.
+    // Không dùng requireOwnedRestaurant() vì ở đây chưa biết restaurantId, chỉ có ownerId.
+    @Transactional(readOnly = true)
+    public RestaurantProfile getMyRestaurant(Long ownerId) {
+        Restaurant restaurant = restaurantRepository.findByOwnerId(ownerId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "You don't have a restaurant yet"));
+        return toProfile(restaurant);
+    }
+
     @Transactional(readOnly = true)
     public PagedResponse<RestaurantSummary> list(int page, int size) {
         int cappedSize = Math.min(size, MAX_PAGE_SIZE);

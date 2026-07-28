@@ -28,6 +28,12 @@ public class RestaurantController {
         return ResponseEntity.status(HttpStatus.CREATED).body(restaurantService.create(currentUserId, request));
     }
 
+    @GetMapping("/me")
+    @Operation(summary = "Get current owner's own restaurant, if any (404 if not created yet)")
+    public ResponseEntity<RestaurantProfile> getMine(@AuthenticationPrincipal Long currentUserId) {
+        return ResponseEntity.ok(restaurantService.getMyRestaurant(currentUserId));
+    }
+
     @PutMapping("/{restaurantId}")
     @Operation(summary = "Update restaurant profile (owner only)")
     public ResponseEntity<RestaurantProfile> update(
