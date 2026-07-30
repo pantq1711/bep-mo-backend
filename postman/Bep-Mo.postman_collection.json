@@ -1,0 +1,510 @@
+{
+  "info": {
+    "name": "Bếp Mở API",
+    "description": "Trust Profile Platform cho quán ăn. Điểm minh bạch chỉ phản ánh mức độ quán chủ động công khai thông tin, KHÔNG xác nhận đạt chuẩn VSATTP.\n\nCách dùng nhanh:\n1. Chạy 'Auth > Register' rồi 'Auth > Login' — 2 request này tự lưu accessToken/refreshToken vào biến collection.\n2. Chạy 'Restaurant > Create' để tạo quán — tự lưu restaurantId.\n3. Các request còn lại tự dùng {{accessToken}} và {{restaurantId}} đã lưu, không cần sửa tay.\n4. Endpoint có (owner only) cần Bearer token của đúng chủ quán đó.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "restaurantId", "value": "" },
+    { "key": "dishId", "value": "" },
+    { "key": "videoId", "value": "" },
+    { "key": "sourceId", "value": "" },
+    { "key": "proofId", "value": "" },
+    { "key": "userEmail", "value": "owner.demo@bepmo.test" },
+    { "key": "userPassword", "value": "MatKhau123" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Tạo tài khoản chủ quán mới. Mọi user đăng ký đều là RESTAURANT_OWNER — không có field role trong request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "  console.log('Đã lưu accessToken/refreshToken sau khi register.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "  console.log('Đã lưu accessToken/refreshToken sau khi login.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "description": "Refresh token là opaque token, rotate mỗi lần dùng — token cũ bị revoke ngay, dùng lại sẽ bị coi là reuse và steal-detect."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Restaurant",
+      "item": [
+        {
+          "name": "Create (owner only, 1 owner = 1 restaurant)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Quán Bún Chả Cô Liên\",\n  \"description\": \"Bún chả gia truyền 20 năm\",\n  \"address\": \"12 Ngõ 5, Đống Đa, Hà Nội\",\n  \"category\": \"Bún phở\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/restaurants", "host": ["{{baseUrl}}"], "path": ["restaurants"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('restaurantId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my restaurant (owner only)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/restaurants/me", "host": ["{{baseUrl}}"], "path": ["restaurants", "me"] },
+            "description": "404 nếu owner chưa tạo quán. Dùng để frontend quyết định điều hướng vào /dashboard/new hay /dashboard."
+          }
+        },
+        {
+          "name": "Update (owner only)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Quán Bún Chả Cô Liên\",\n  \"description\": \"Bún chả gia truyền 20 năm, mới sửa lại quán\",\n  \"address\": \"12 Ngõ 5, Đống Đa, Hà Nội\",\n  \"category\": \"Bún phở\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get by id (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}"]
+            }
+          }
+        },
+        {
+          "name": "List (public, paginated)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dish",
+      "item": [
+        {
+          "name": "Create (owner only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bún chả suất đầy đủ\",\n  \"description\": \"Chả miếng + chả băm, bún, rau sống\",\n  \"price\": 45000,\n  \"category\": \"Món chính\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/dishes",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "dishes"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('dishId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update (owner only)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bún chả suất đầy đủ\",\n  \"description\": \"Chả miếng + chả băm, bún, rau sống\",\n  \"price\": 50000,\n  \"category\": \"Món chính\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/dishes/{{dishId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "dishes", "{{dishId}}"]
+            }
+          }
+        },
+        {
+          "name": "Toggle availability (owner only)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"isAvailable\": false\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/dishes/{{dishId}}/availability",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "dishes", "{{dishId}}", "availability"]
+            }
+          }
+        },
+        {
+          "name": "List (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/dishes?availableOnly=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "dishes"],
+              "query": [{ "key": "availableOnly", "value": "false" }]
+            }
+          }
+        },
+        {
+          "name": "Delete (owner only)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/dishes/{{dishId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "dishes", "{{dishId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ProfileVideo",
+      "item": [
+        {
+          "name": "Upload metadata (owner only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"KITCHEN\",\n  \"cloudinaryUrl\": \"https://res.cloudinary.com/demo/video/upload/v1/kitchen.mp4\",\n  \"cloudinaryPublicId\": \"kitchen_demo_1\",\n  \"thumbnailUrl\": \"https://res.cloudinary.com/demo/video/upload/v1/kitchen.jpg\",\n  \"durationSeconds\": 30,\n  \"fileSizeBytes\": 5242880\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/videos",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "videos"]
+            },
+            "description": "type: INGREDIENT_RECEIVING | KITCHEN | HYGIENE | PREP. Mỗi type chỉ 1 video ACTIVE — upload video mới cùng type tự động thay video cũ. Client phải tự upload lên Cloudinary trước, backend chỉ ghi metadata."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('videoId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List active (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/videos",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "videos"]
+            }
+          }
+        },
+        {
+          "name": "Hide (owner only)",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/videos/{{videoId}}/hide",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "videos", "{{videoId}}", "hide"]
+            }
+          }
+        },
+        {
+          "name": "Delete (owner only, soft delete)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/videos/{{videoId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "videos", "{{videoId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "IngredientSource",
+      "item": [
+        {
+          "name": "Create (owner only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Chợ Long Biên\",\n  \"sourceType\": \"WHOLESALE_MARKET\",\n  \"note\": \"Lấy thịt và rau mỗi sáng sớm\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/ingredient-sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "ingredient-sources"]
+            },
+            "description": "sourceType: LOCAL_MARKET | WHOLESALE_MARKET | DIRECT_FARM | SUPPLIER_COMPANY | SUPERMARKET | OTHER"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('sourceId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update (owner only)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Chợ Long Biên\",\n  \"sourceType\": \"WHOLESALE_MARKET\",\n  \"note\": \"Lấy thịt và rau mỗi sáng sớm, đổi mối mới\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/ingredient-sources/{{sourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "ingredient-sources", "{{sourceId}}"]
+            }
+          }
+        },
+        {
+          "name": "List active (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/ingredient-sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "ingredient-sources"]
+            }
+          }
+        },
+        {
+          "name": "Delete (owner only, soft delete)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/ingredient-sources/{{sourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "ingredient-sources", "{{sourceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RecentProof",
+      "item": [
+        {
+          "name": "Create (owner only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proofType\": \"INVOICE\",\n  \"mediaUrl\": \"https://res.cloudinary.com/demo/image/upload/v1/invoice.jpg\",\n  \"cloudinaryPublicId\": \"invoice_demo_1\",\n  \"note\": \"Hoá đơn nhập thịt heo sáng nay\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/recent-proofs",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "recent-proofs"]
+            },
+            "description": "proofType: INGREDIENT_PHOTO | INVOICE | DELIVERY_NOTE | PACKAGE_LABEL | RECEIVING_VIDEO. KHÔNG gửi mediaKind — backend tự suy (RECEIVING_VIDEO -> VIDEO, còn lại -> IMAGE)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('proofId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List 3 most recent (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/recent-proofs",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "recent-proofs"]
+            }
+          }
+        },
+        {
+          "name": "Delete (owner only, soft delete)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/recent-proofs/{{proofId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "recent-proofs", "{{proofId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "TransparencyScore",
+      "item": [
+        {
+          "name": "Get score (public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/transparency-score",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "transparency-score"]
+            },
+            "description": "Completeness 80đ (ingredient source ACTIVE +15, video INGREDIENT_RECEIVING +20, KITCHEN +20, HYGIENE +15, PREP +10) + Freshness 20đ (proof <=7 ngày +20, 8-14 ngày +10, >14 ngày/không có +0). Tính on-demand, cache Redis, không lưu DB."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "Cần token của user có role ADMIN — collection này không tự tạo sẵn tài khoản admin (phải seed tay ở DB hoặc migration riêng).",
+      "item": [
+        { "name": "Hide restaurant", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/restaurants/{{restaurantId}}/hide", "host": ["{{baseUrl}}"], "path": ["admin", "restaurants", "{{restaurantId}}", "hide"] } } },
+        { "name": "Unhide restaurant", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/restaurants/{{restaurantId}}/unhide", "host": ["{{baseUrl}}"], "path": ["admin", "restaurants", "{{restaurantId}}", "unhide"] } } },
+        { "name": "Hide video", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/videos/{{videoId}}/hide", "host": ["{{baseUrl}}"], "path": ["admin", "videos", "{{videoId}}", "hide"] } } },
+        { "name": "Unhide video", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/videos/{{videoId}}/unhide", "host": ["{{baseUrl}}"], "path": ["admin", "videos", "{{videoId}}", "unhide"] } } },
+        { "name": "Hide ingredient source", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/ingredient-sources/{{sourceId}}/hide", "host": ["{{baseUrl}}"], "path": ["admin", "ingredient-sources", "{{sourceId}}", "hide"] } } },
+        { "name": "Unhide ingredient source", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/ingredient-sources/{{sourceId}}/unhide", "host": ["{{baseUrl}}"], "path": ["admin", "ingredient-sources", "{{sourceId}}", "unhide"] } } },
+        { "name": "Hide recent proof", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/recent-proofs/{{proofId}}/hide", "host": ["{{baseUrl}}"], "path": ["admin", "recent-proofs", "{{proofId}}", "hide"] } } },
+        { "name": "Unhide recent proof", "request": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/admin/recent-proofs/{{proofId}}/unhide", "host": ["{{baseUrl}}"], "path": ["admin", "recent-proofs", "{{proofId}}", "unhide"] } } },
+        { "name": "Disable user", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{baseUrl}}/admin/users/:userId/disable", "host": ["{{baseUrl}}"], "path": ["admin", "users", ":userId", "disable"], "variable": [{ "key": "userId", "value": "" }] } } },
+        { "name": "Enable user", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{baseUrl}}/admin/users/:userId/enable", "host": ["{{baseUrl}}"], "path": ["admin", "users", ":userId", "enable"], "variable": [{ "key": "userId", "value": "" }] } } }
+      ]
+    }
+  ]
+}
