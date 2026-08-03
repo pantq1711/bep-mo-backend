@@ -44,6 +44,12 @@ public class SecurityConfig {
                     "/api/v1/auth/refresh"
                 ).permitAll()
 
+                // Owner only — phải khai báo TRƯỚC rule wildcard public bên dưới,
+                // Spring Security match theo thứ tự, rule đầu tiên khớp sẽ thắng.
+                // Không có dòng này thì "/api/v1/restaurants/me" bị lọt vào pattern
+                // GET "/api/v1/restaurants/**" permitAll ở dưới -> thành public nhầm.
+                .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/me").authenticated()
+
                 // Public — Visitor read-only
                 .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/**").permitAll()
 
