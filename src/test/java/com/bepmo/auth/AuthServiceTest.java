@@ -51,10 +51,14 @@ class AuthServiceTest {
                 .status(UserStatus.ACTIVE)
                 .build();
 
-        when(jwtProperties.getAccessTokenExpirationMs()).thenReturn(900_000L);
-        when(jwtProperties.getRefreshTokenExpirationMs()).thenReturn(604_800_000L);
-        when(jwtUtil.generateAccessToken(any(), any(), any())).thenReturn("access-token-mock");
-        when(refreshTokenRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        // lenient() vì không phải test nào cũng đi tới bước sinh token — nhiều test
+        // (login sai mật khẩu, refresh token hết hạn/reuse, logout...) throw exception
+        // sớm hơn, strict-stubs mode của MockitoExtension sẽ fail nếu không đánh dấu
+        // lenient cho các stub dùng chung không phải lúc nào cũng chạm tới.
+        lenient().when(jwtProperties.getAccessTokenExpirationMs()).thenReturn(900_000L);
+        lenient().when(jwtProperties.getRefreshTokenExpirationMs()).thenReturn(604_800_000L);
+        lenient().when(jwtUtil.generateAccessToken(any(), any(), any())).thenReturn("access-token-mock");
+        lenient().when(refreshTokenRepository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
 
     // ── Register ──────────────────────────────────────────────────────────────

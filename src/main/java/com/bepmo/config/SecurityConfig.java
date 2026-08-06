@@ -1,6 +1,7 @@
 package com.bepmo.config;
 
 import com.bepmo.security.filter.JwtAuthFilter;
+import com.bepmo.security.filter.JwtAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,12 +23,20 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Không cấu hình httpBasic()/formLogin() (đúng, app JWT-only) nên Spring
+            // Security tự fallback về Http403ForbiddenEntryPoint mặc định -> MỌI
+            // request thiếu/sai token đều 403, kể cả trường hợp phải là 401 (chưa xác
+            // thực). Ghi đè bằng entry point riêng để trả đúng 401 — bug này làm
+            // tính năng "silent refresh" ở frontend không hoạt động, vì frontend chỉ
+            // tự refresh khi thấy đúng status 401.
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
             .authorizeHttpRequests(auth -> auth
 
                 // Public — Swagger

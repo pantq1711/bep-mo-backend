@@ -5,6 +5,7 @@ import com.bepmo.restaurant.controller.RestaurantController;
 import com.bepmo.restaurant.dto.RestaurantDtos.RestaurantProfile;
 import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.security.filter.JwtAuthFilter;
+import com.bepmo.security.filter.JwtAuthenticationEntryPoint;
 import com.bepmo.security.util.JwtUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * đầu tiên khớp thắng).
  */
 @WebMvcTest(RestaurantController.class)
-@Import({ SecurityConfig.class, JwtAuthFilter.class })
+@Import({ SecurityConfig.class, JwtAuthFilter.class, JwtAuthenticationEntryPoint.class })
 class RestaurantControllerSecurityTest {
 
     @Autowired

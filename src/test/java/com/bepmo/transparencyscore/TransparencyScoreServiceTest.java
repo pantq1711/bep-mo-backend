@@ -48,7 +48,10 @@ class TransparencyScoreServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(restaurantRepository.existsById(1L)).thenReturn(true);
+        // lenient() vì 2 test không đụng tới stub này: getScore_restaurantNotFound
+        // dùng id khác (999L, tự stub riêng), evictCache_deletesCorrectKey không gọi
+        // getScore() nên không bao giờ chạm restaurantRepository.existsById(1L).
+        lenient().when(restaurantRepository.existsById(1L)).thenReturn(true);
     }
 
     @Test

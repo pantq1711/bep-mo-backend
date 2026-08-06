@@ -36,3 +36,11 @@ build/
 .env
 *.env
 **/application-local.yaml
+
+# application.yml chứa secret thật (DB password, JWT secret) — PHẢI không được
+# push. Pattern cũ trong file này chỉ khớp "application-local.yaml" (khác tên,
+# khác đuôi), nên application.yml thật KHÔNG hề được loại trừ trước đây — lỗ
+# hổng thật, phát hiện lúc verify Tuần 8/9, vá ngay tại đây.
+src/main/resources/application.yml
+src/main/resources/application-*.yml
+src/main/resources/application-*.yaml
