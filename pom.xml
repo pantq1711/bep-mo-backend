@@ -14,6 +14,11 @@
     <properties>
         <java.version>17</java.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <!-- Ghi đè bản Lombok mà spring-boot-starter-parent 3.3.0 pin sẵn (bản cũ,
+             chưa hỗ trợ JDK 23) — cần bản >=1.18.40 mới build được nếu máy chạy
+             Maven bằng JDK 23. Không ảnh hưởng gì nếu build bằng JDK 17/21 (LTS) —
+             chỉ là an toàn thêm. -->
+        <lombok.version>1.18.42</lombok.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -124,6 +129,18 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- JDK 23 trở đi, javac mặc định KHÔNG tự chạy annotation
+                         processor nữa (khác mọi JDK trước đó) — không có dòng này,
+                         Lombok bị bỏ qua âm thầm, sinh ra hàng loạt lỗi "cannot find
+                         symbol" cho getter/setter/builder dù pom.xml không sai gì.
+                         Không ảnh hưởng nếu build bằng JDK <=21. -->
+                    <proc>full</proc>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
