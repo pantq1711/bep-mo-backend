@@ -108,9 +108,20 @@ Testcontainers để verify partial unique index của `ProfileVideo` — test n
 ## Trạng thái đã verify thật (tính đến khi viết README này)
 
 - ✅ Build (`mvn compile`) và toàn bộ endpoint đọc trực tiếp từ Controller thật — không đoán.
-- ⚠️ `mvn test` — **chưa chạy được trong môi trường viết code này** (không có mạng để tải
-  Maven wrapper). Tự chạy ở máy bạn trước khi coi bất kỳ module nào là "đã xong".
+- ✅ `mvn test` đã chạy thật trên máy dev (Windows, JDK 23): **57/58 pass**.
+  - Toàn bộ unit test service layer (Auth, Restaurant, Dish, IngredientSource, ProfileVideo,
+    RecentProof, TransparencyScore, Admin) và `RestaurantControllerSecurityTest` (verify đúng
+    401 vs 403) đều pass.
+  - 1 test fail: `ProfileVideoUniqueActiveIndexTest` (Testcontainers) — **fail do môi trường,
+    không phải lỗi code**. Testcontainers 1.20.1 không tương thích với Docker Engine
+    29.4.0/API 1.54 trên máy dev (đã xác nhận qua log: handshake trả `400 Bad Request` dù
+    `docker compose up` chạy Postgres/Redis bình thường, `curl :2375/version` xác nhận Docker
+    Engine API sống tốt). Business rule mà test này verify (partial unique index của
+    `ProfileVideo`, xem mục Business rules) không có vấn đề — chỉ chưa verify được bằng
+    Testcontainers trên máy này. Cần verify qua CI (GitHub Actions, Linux runner) hoặc nâng
+    `testcontainers-bom` lên bản mới hơn (2.0.5 — major version, chưa thử vì rủi ro breaking
+    change).
 - ⚠️ Luồng end-to-end qua Docker Compose (đăng ký → tạo quán → CRUD dish/video/
-  ingredient-source/proof → xem điểm minh bạch đổi đúng) — **chưa được test tay thật**.
-- ⚠️ `.dockerignore` hiện đang thiếu ở root — cần thêm trước khi build image, tránh copy
-  `target/`, `.git/` vào image.
+  ingredient-source/proof → xem điểm minh bạch đổi đúng) — **chưa được test tay thật**. Đây
+  là việc còn thiếu duy nhất trước khi coi hệ thống là "chạy ổn định các luồng chính".
+- ✅ `.dockerignore` đã có ở root, loại trừ `target/`, `.git/` khi build image.
