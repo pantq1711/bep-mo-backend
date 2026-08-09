@@ -69,4 +69,19 @@ public class JwtUtil {
     public String getRoleFromToken(String token) {
         return parseToken(token).get("role", String.class);
     }
+
+    public String getJti(String token) {
+        return parseToken(token).getId();
+    }
+
+    /**
+     * Số giây còn lại tới khi token hết hạn tự nhiên — dùng làm TTL cho key
+     * blacklist trong Redis, để key tự biến mất đúng lúc token hết hạn, không
+     * cần job dọn dẹp riêng.
+     */
+    public long getRemainingTtlSeconds(String token) {
+        Date expiration = parseToken(token).getExpiration();
+        long remainingMs = expiration.getTime() - System.currentTimeMillis();
+        return Math.max(remainingMs / 1000, 0);
+    }
 }

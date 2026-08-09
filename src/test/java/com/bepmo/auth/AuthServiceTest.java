@@ -4,6 +4,7 @@ import com.bepmo.auth.dto.AuthDtos.*;
 import com.bepmo.auth.service.AuthService;
 import com.bepmo.common.exception.AppException;
 import com.bepmo.config.JwtProperties;
+import com.bepmo.security.service.JwtBlacklistService;
 import com.bepmo.security.util.JwtUtil;
 import com.bepmo.user.entity.RefreshToken;
 import com.bepmo.user.entity.User;
@@ -35,6 +36,7 @@ class AuthServiceTest {
     @Mock RefreshTokenRepository refreshTokenRepository;
     @Mock PasswordEncoder passwordEncoder;
     @Mock JwtUtil jwtUtil;
+    @Mock JwtBlacklistService jwtBlacklistService;
     @Mock JwtProperties jwtProperties;
 
     @InjectMocks AuthService authService;
@@ -199,10 +201,23 @@ class AuthServiceTest {
         when(refreshTokenRepository.findByTokenHash(anyString()))
                 .thenReturn(Optional.of(active));
 
-        authService.logout("any-raw-token");
+        authService.logout("any-raw-token", null);
 
         assertThat(active.getRevokedAt()).isNotNull();
         verify(refreshTokenRepository).save(active);
+    }
+
+    @Test
+    @DisplayName("logout: valid access token → blacklisted in Redis with remaining TTL")
+    void logout_blacklistsAccessToken() {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+        when(jwtUtil.isTokenValid("access-token")).thenReturn(true);
+        when(jwtUtil.getJti("access-token")).thenReturn("jti-123");
+        when(jwtUtil.getRemainingTtlSeconds("access-token")).thenReturn(600L);
+
+        authService.logout("any-raw-token", "access-token");
+
+        verify(jwtBlacklistService).blacklist("jti-123", 600L);
     }
 
     @Test
@@ -210,7 +225,7 @@ class AuthServiceTest {
     void logout_tokenNotFound_noException() {
         when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
 
-        assertThatCode(() -> authService.logout("ghost-token"))
+        assertThatCode(() -> authService.logout("ghost-token", null))
                 .doesNotThrowAnyException();
     }
 }

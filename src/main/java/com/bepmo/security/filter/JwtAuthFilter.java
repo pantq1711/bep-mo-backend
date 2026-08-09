@@ -1,5 +1,6 @@
 package com.bepmo.security.filter;
 
+import com.bepmo.security.service.JwtBlacklistService;
 import com.bepmo.security.util.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -23,6 +24,7 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final JwtBlacklistService jwtBlacklistService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -32,7 +34,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = extractToken(request);
 
-        if (StringUtils.hasText(token) && jwtUtil.isTokenValid(token)) {
+        if (StringUtils.hasText(token) && jwtUtil.isTokenValid(token)
+                && !jwtBlacklistService.isBlacklisted(jwtUtil.getJti(token))) {
             Long userId = jwtUtil.getUserIdFromToken(token);
             String role  = jwtUtil.getRoleFromToken(token);
 

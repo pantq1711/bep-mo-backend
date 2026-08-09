@@ -6,6 +6,7 @@ import com.bepmo.restaurant.dto.RestaurantDtos.RestaurantProfile;
 import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.security.filter.JwtAuthFilter;
 import com.bepmo.security.filter.JwtAuthenticationEntryPoint;
+import com.bepmo.security.service.JwtBlacklistService;
 import com.bepmo.security.util.JwtUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,11 @@ class RestaurantControllerSecurityTest {
     // token nào cả, chỉ mock cho context load được.
     @MockBean
     private JwtUtil jwtUtil;
+
+    // JwtAuthFilter giờ check blacklist trước khi set authentication — cần mock để
+    // context load được, dù test này không gửi token nên không thực sự chạm tới.
+    @MockBean
+    private JwtBlacklistService jwtBlacklistService;
 
     @Test
     @DisplayName("GET /restaurants/me không có token -> 401, KHÔNG được lọt qua permitAll")

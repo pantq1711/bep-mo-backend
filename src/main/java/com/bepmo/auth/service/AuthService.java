@@ -3,6 +3,7 @@ package com.bepmo.auth.service;
 import com.bepmo.auth.dto.AuthDtos.*;
 import com.bepmo.common.exception.AppException;
 import com.bepmo.config.JwtProperties;
+import com.bepmo.security.service.JwtBlacklistService;
 import com.bepmo.security.util.JwtUtil;
 import com.bepmo.user.entity.RefreshToken;
 import com.bepmo.user.entity.User;
@@ -30,6 +31,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final JwtBlacklistService jwtBlacklistService;
     private final JwtProperties jwtProperties;
 
     private final SecureRandom secureRandom = new SecureRandom();
@@ -121,17 +123,25 @@ public class AuthService {
     // ── Logout ────────────────────────────────────────────────────────────────
 
     /**
-     * Logout: revoke the specific refresh token.
-     * Access token hết hạn tự nhiên sau 15 phút — không blacklist trong MVP.
+     * Logout: revoke refresh token + blacklist access token hiện tại (theo jti).
+     * Trước đây access token chỉ hết hạn tự nhiên sau khi logout (vulnerability
+     * window đã ghi trong đề cương) — giờ blacklist ngay lập tức trong Redis,
+     * JwtAuthFilter sẽ từ chối token này ở request tiếp theo dù chữ ký vẫn hợp lệ.
      */
     @Transactional
-    public void logout(String rawRefreshToken) {
+    public void logout(String rawRefreshToken, String rawAccessToken) {
         String hash = hashToken(rawRefreshToken);
         refreshTokenRepository.findByTokenHash(hash).ifPresent(token -> {
             token.setRevokedAt(OffsetDateTime.now());
             refreshTokenRepository.save(token);
         });
-        // Không throw nếu token không tồn tại — logout idempotent
+        // Không throw nếu refresh token không tồn tại — logout idempotent
+
+        if (rawAccessToken != null && jwtUtil.isTokenValid(rawAccessToken)) {
+            String jti = jwtUtil.getJti(rawAccessToken);
+            long ttlSeconds = jwtUtil.getRemainingTtlSeconds(rawAccessToken);
+            jwtBlacklistService.blacklist(jti, ttlSeconds);
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

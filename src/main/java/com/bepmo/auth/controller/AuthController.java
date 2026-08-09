@@ -4,6 +4,7 @@ import com.bepmo.auth.dto.AuthDtos.*;
 import com.bepmo.auth.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,9 +38,21 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    @Operation(summary = "Revoke refresh token (access token expires naturally)")
-    public ResponseEntity<MessageResponse> logout(@Valid @RequestBody RefreshRequest request) {
-        authService.logout(request.refreshToken());
+    @Operation(summary = "Revoke refresh token and blacklist current access token")
+    public ResponseEntity<MessageResponse> logout(
+            @Valid @RequestBody RefreshRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        String accessToken = extractBearerToken(httpRequest);
+        authService.logout(request.refreshToken(), accessToken);
         return ResponseEntity.ok(new MessageResponse("Logged out successfully"));
+    }
+
+    private String extractBearerToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+        return null;
     }
 }
