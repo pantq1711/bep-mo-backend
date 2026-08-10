@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/restaurants")
 @RequiredArgsConstructor
@@ -51,11 +53,19 @@ public class RestaurantController {
     }
 
     @GetMapping
-    @Operation(summary = "List active restaurants (public, paginated)")
+    @Operation(summary = "List active restaurants (public, searchable/filterable, paginated)")
     public ResponseEntity<PagedResponse<RestaurantSummary>> list(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false, name = "q") String query,
+            @RequestParam(required = false) String category
     ) {
-        return ResponseEntity.ok(restaurantService.list(page, size));
+        return ResponseEntity.ok(restaurantService.list(page, size, query, category));
+    }
+
+    @GetMapping("/categories")
+    @Operation(summary = "List active restaurant categories for public filters")
+    public ResponseEntity<List<String>> categories() {
+        return ResponseEntity.ok(restaurantService.listCategories());
     }
 }

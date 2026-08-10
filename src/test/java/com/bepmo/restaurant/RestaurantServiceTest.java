@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 
 import java.util.List;
@@ -152,13 +153,44 @@ class RestaurantServiceTest {
     }
 
     @Test
-    @DisplayName("list: cap page size tối đa 50 dù client request lớn hơn")
-    void list_capsPageSize() {
-        when(restaurantRepository.findByStatus(eq(RestaurantStatus.ACTIVE), any()))
-                .thenReturn(new PageImpl<>(List.of(restaurant), PageRequest.of(0, 50), 1));
+    @DisplayName("list: cap page size tối đa 50 và chuẩn hoá page âm về 0")
+    void list_capsPageSizeAndNormalizesPage() {
+        PageRequest expectedPageable = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
+        when(restaurantRepository.searchPublic(
+                eq(RestaurantStatus.ACTIVE), isNull(), isNull(), any()))
+                .thenReturn(new PageImpl<>(List.of(restaurant), expectedPageable, 1));
 
-        restaurantService.list(0, 1000);
+        restaurantService.list(-5, 1000, "   ", null);
 
-        verify(restaurantRepository).findByStatus(eq(RestaurantStatus.ACTIVE), argThat(p -> p.getPageSize() == 50));
+        verify(restaurantRepository).searchPublic(
+                eq(RestaurantStatus.ACTIVE),
+                isNull(),
+                isNull(),
+                argThat(p -> p.getPageNumber() == 0 && p.getPageSize() == 50)
+        );
+    }
+
+    @Test
+    @DisplayName("list: trim query/category trước khi tìm kiếm")
+    void list_normalizesSearchFilters() {
+        when(restaurantRepository.searchPublic(
+                eq(RestaurantStatus.ACTIVE), eq("pho"), eq("Phở"), any()))
+                .thenReturn(new PageImpl<>(List.of(restaurant)));
+
+        PagedResponse<RestaurantSummary> result = restaurantService.list(0, 12, "  pho  ", "  Phở  ");
+
+        assertThat(result.content()).hasSize(1);
+        verify(restaurantRepository).searchPublic(
+                eq(RestaurantStatus.ACTIVE), eq("pho"), eq("Phở"), any());
+    }
+
+    @Test
+    @DisplayName("listCategories: chỉ lấy category của quán ACTIVE")
+    void listCategories_success() {
+        when(restaurantRepository.findDistinctCategoriesByStatus(RestaurantStatus.ACTIVE))
+                .thenReturn(List.of("Bún", "Phở"));
+
+        assertThat(restaurantService.listCategories()).containsExactly("Bún", "Phở");
+        verify(restaurantRepository).findDistinctCategoriesByStatus(RestaurantStatus.ACTIVE);
     }
 }

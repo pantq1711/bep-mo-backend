@@ -8,9 +8,12 @@ import com.bepmo.restaurant.repository.RestaurantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -81,12 +84,31 @@ public class RestaurantService {
     }
 
     @Transactional(readOnly = true)
-    public PagedResponse<RestaurantSummary> list(int page, int size) {
-        int cappedSize = Math.min(size, MAX_PAGE_SIZE);
-        Pageable pageable = PageRequest.of(page, cappedSize);
-        return PagedResponse.from(
-                restaurantRepository.findByStatus(RestaurantStatus.ACTIVE, pageable).map(this::toSummary)
+    public PagedResponse<RestaurantSummary> list(int page, int size, String query, String category) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        String normalizedQuery = normalizeOptionalText(query);
+        String normalizedCategory = normalizeOptionalText(category);
+
+        Pageable pageable = PageRequest.of(
+                safePage,
+                safeSize,
+                Sort.by(Sort.Direction.DESC, "createdAt")
         );
+
+        return PagedResponse.from(
+                restaurantRepository.searchPublic(
+                        RestaurantStatus.ACTIVE,
+                        normalizedQuery,
+                        normalizedCategory,
+                        pageable
+                ).map(this::toSummary)
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> listCategories() {
+        return restaurantRepository.findDistinctCategoriesByStatus(RestaurantStatus.ACTIVE);
     }
 
     // ── Ownership guard — dùng lại bởi Dish/ProfileVideo/IngredientSource/RecentProof service ──
@@ -101,6 +123,12 @@ public class RestaurantService {
         }
 
         return restaurant;
+    }
+
+    private String normalizeOptionalText(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     // ── Mapping ───────────────────────────────────────────────────────────────
