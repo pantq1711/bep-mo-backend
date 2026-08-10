@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -87,8 +88,8 @@ public class RestaurantService {
     public PagedResponse<RestaurantSummary> list(int page, int size, String query, String category) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        String normalizedQuery = normalizeOptionalText(query);
-        String normalizedCategory = normalizeOptionalText(category);
+        String normalizedQuery = normalizeSearchText(query);
+        String normalizedCategory = normalizeSearchText(category);
 
         Pageable pageable = PageRequest.of(
                 safePage,
@@ -125,10 +126,9 @@ public class RestaurantService {
         return restaurant;
     }
 
-    private String normalizeOptionalText(String value) {
-        if (value == null) return null;
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+    private String normalizeSearchText(String value) {
+        if (value == null) return "";
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     // ── Mapping ───────────────────────────────────────────────────────────────

@@ -14,21 +14,21 @@ import java.util.Optional;
 public interface RestaurantRepository extends JpaRepository<Restaurant, Long> {
 
     // Public listing — chỉ ACTIVE, có search/filter + phân trang.
-    // query=null  -> không lọc text
-    // category=null -> không lọc category
+    // query/category luôn là chuỗi không-null; chuỗi rỗng nghĩa là không lọc.
+    // Tránh truyền NULL vào LOWER(:param) vì PostgreSQL có thể bind NULL thành bytea.
     @Query("""
             SELECT r
             FROM Restaurant r
             WHERE r.status = :status
               AND (
-                    :query IS NULL
-                    OR LOWER(r.name) LIKE LOWER(CONCAT('%', :query, '%'))
-                    OR LOWER(r.address) LIKE LOWER(CONCAT('%', :query, '%'))
-                    OR LOWER(COALESCE(r.category, '')) LIKE LOWER(CONCAT('%', :query, '%'))
+                    :query = ''
+                    OR LOWER(r.name) LIKE CONCAT('%', :query, '%')
+                    OR LOWER(r.address) LIKE CONCAT('%', :query, '%')
+                    OR LOWER(COALESCE(r.category, '')) LIKE CONCAT('%', :query, '%')
                   )
               AND (
-                    :category IS NULL
-                    OR LOWER(r.category) = LOWER(:category)
+                    :category = ''
+                    OR LOWER(r.category) = :category
                   )
             """)
     Page<Restaurant> searchPublic(

@@ -157,15 +157,15 @@ class RestaurantServiceTest {
     void list_capsPageSizeAndNormalizesPage() {
         PageRequest expectedPageable = PageRequest.of(0, 50, Sort.by(Sort.Direction.DESC, "createdAt"));
         when(restaurantRepository.searchPublic(
-                eq(RestaurantStatus.ACTIVE), isNull(), isNull(), any()))
+                eq(RestaurantStatus.ACTIVE), eq(""), eq(""), any()))
                 .thenReturn(new PageImpl<>(List.of(restaurant), expectedPageable, 1));
 
         restaurantService.list(-5, 1000, "   ", null);
 
         verify(restaurantRepository).searchPublic(
                 eq(RestaurantStatus.ACTIVE),
-                isNull(),
-                isNull(),
+                eq(""),
+                eq(""),
                 argThat(p -> p.getPageNumber() == 0 && p.getPageSize() == 50)
         );
     }
@@ -174,14 +174,27 @@ class RestaurantServiceTest {
     @DisplayName("list: trim query/category trước khi tìm kiếm")
     void list_normalizesSearchFilters() {
         when(restaurantRepository.searchPublic(
-                eq(RestaurantStatus.ACTIVE), eq("pho"), eq("Phở"), any()))
+                eq(RestaurantStatus.ACTIVE), eq("pho"), eq("phở"), any()))
                 .thenReturn(new PageImpl<>(List.of(restaurant)));
 
-        PagedResponse<RestaurantSummary> result = restaurantService.list(0, 12, "  pho  ", "  Phở  ");
+        PagedResponse<RestaurantSummary> result = restaurantService.list(0, 12, "  PHO  ", "  Phở  ");
 
         assertThat(result.content()).hasSize(1);
         verify(restaurantRepository).searchPublic(
-                eq(RestaurantStatus.ACTIVE), eq("pho"), eq("Phở"), any());
+                eq(RestaurantStatus.ACTIVE), eq("pho"), eq("phở"), any());
+    }
+
+    @Test
+    @DisplayName("list: filter trống không truyền null xuống repository")
+    void list_blankFilters_useEmptyStrings() {
+        when(restaurantRepository.searchPublic(
+                eq(RestaurantStatus.ACTIVE), eq(""), eq(""), any()))
+                .thenReturn(new PageImpl<>(List.of(restaurant)));
+
+        restaurantService.list(0, 8, null, "   ");
+
+        verify(restaurantRepository).searchPublic(
+                eq(RestaurantStatus.ACTIVE), eq(""), eq(""), any());
     }
 
     @Test
