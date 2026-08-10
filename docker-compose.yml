@@ -22,7 +22,12 @@ services:
     image: redis:7-alpine
     container_name: bepmo-redis
     ports:
-      - "6379:6379"
+      # Host port đổi sang 6380 (không phải 6379 mặc định) vì máy dev còn 1 project
+      # khác (expensetracker) cũng dùng redis:6379 — tránh xung đột "port already
+      # allocated" mỗi lần bật cả 2 project. Bên trong Docker network, app vẫn kết
+      # nối Redis qua tên service "redis:6379" như cũ (SPRING_DATA_REDIS_HOST=redis),
+      # không bị ảnh hưởng bởi đổi port map ra host này.
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
