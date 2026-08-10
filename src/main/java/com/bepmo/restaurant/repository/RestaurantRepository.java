@@ -14,6 +14,9 @@ public interface RestaurantRepository extends JpaRepository<Restaurant, Long> {
     // Spring Data tự generate: SELECT * FROM restaurants WHERE status = ? LIMIT ? OFFSET ?
     Page<Restaurant> findByStatus(RestaurantStatus status, Pageable pageable);
 
+    // Public detail — quán HIDDEN không được truy cập bằng cách đoán URL/id.
+    Optional<Restaurant> findByIdAndStatus(Long id, RestaurantStatus status);
+
     // Owner lookup — kiểm tra owner đã có quán chưa
     Optional<Restaurant> findByOwnerId(Long ownerId);
 

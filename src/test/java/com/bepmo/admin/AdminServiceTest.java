@@ -57,6 +57,19 @@ class AdminServiceTest {
         adminService.hideRestaurant(1L);
 
         assertThat(r.getStatus()).isEqualTo(RestaurantStatus.HIDDEN);
+        verify(transparencyScoreService).evictCache(1L);
+    }
+
+    @Test
+    @DisplayName("unhideRestaurant: đặt status ACTIVE + evict cache")
+    void unhideRestaurant_setsActiveAndEvicts() {
+        Restaurant r = Restaurant.builder().id(1L).status(RestaurantStatus.HIDDEN).build();
+        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(r));
+
+        adminService.unhideRestaurant(1L);
+
+        assertThat(r.getStatus()).isEqualTo(RestaurantStatus.ACTIVE);
+        verify(transparencyScoreService).evictCache(1L);
     }
 
     @Test

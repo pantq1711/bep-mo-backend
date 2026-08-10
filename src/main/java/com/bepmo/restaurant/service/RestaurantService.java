@@ -65,7 +65,7 @@ public class RestaurantService {
 
     @Transactional(readOnly = true)
     public RestaurantProfile getProfile(Long restaurantId) {
-        Restaurant restaurant = restaurantRepository.findById(restaurantId)
+        Restaurant restaurant = restaurantRepository.findByIdAndStatus(restaurantId, RestaurantStatus.ACTIVE)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
         return toProfile(restaurant);
     }

@@ -45,12 +45,16 @@ public class AdminService {
     public void hideRestaurant(Long restaurantId) {
         Restaurant r = findRestaurant(restaurantId);
         r.setStatus(RestaurantStatus.HIDDEN);
+        // Profile bị ẩn không còn public; xoá cache score để trạng thái moderation không giữ
+        // dữ liệu cache cũ xuyên qua lần hide/unhide tiếp theo.
+        transparencyScoreService.evictCache(restaurantId);
     }
 
     @Transactional
     public void unhideRestaurant(Long restaurantId) {
         Restaurant r = findRestaurant(restaurantId);
         r.setStatus(RestaurantStatus.ACTIVE);
+        transparencyScoreService.evictCache(restaurantId);
     }
 
     // ── ProfileVideo ──────────────────────────────────────────────────────────

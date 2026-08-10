@@ -111,12 +111,24 @@ class RestaurantServiceTest {
     @Test
     @DisplayName("getProfile: tồn tại → trả về profile, transparencyScore null (tách domain)")
     void getProfile_success() {
-        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+        when(restaurantRepository.findByIdAndStatus(1L, RestaurantStatus.ACTIVE)).thenReturn(Optional.of(restaurant));
 
         RestaurantProfile result = restaurantService.getProfile(1L);
 
         assertThat(result.id()).isEqualTo(1L);
         assertThat(result.transparencyScore()).isNull();
+    }
+
+    @Test
+    @DisplayName("getProfile: quán HIDDEN/không tồn tại trong public scope → 404")
+    void getProfile_hidden_returns404() {
+        when(restaurantRepository.findByIdAndStatus(1L, RestaurantStatus.ACTIVE)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> restaurantService.getProfile(1L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+
+        verify(restaurantRepository, never()).findById(1L);
     }
 
     @Test
