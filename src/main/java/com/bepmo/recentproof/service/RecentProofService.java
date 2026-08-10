@@ -56,7 +56,8 @@ public class RecentProofService {
 
     // Public profile chỉ hiện 3 proof gần nhất — theo đúng scope MVP (không có timeline lịch sử)
     @Transactional(readOnly = true)
-    public List<RecentProofResponse> listRecentActive(Long restaurantId) {
+    public List<RecentProofResponse> listRecentActive(Long restaurantId, Long currentUserId) {
+        restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
         return recentProofRepository.findTop3ByRestaurantIdAndStatusOrderByUploadedAtDesc(
                         restaurantId, RecentProofStatus.ACTIVE)
                 .stream().map(this::toResponse).toList();

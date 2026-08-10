@@ -1,6 +1,7 @@
 package com.bepmo.auth.service;
 
 import com.bepmo.auth.dto.AuthDtos.*;
+import com.bepmo.auth.exception.RefreshTokenReuseException;
 import com.bepmo.common.exception.AppException;
 import com.bepmo.config.JwtProperties;
 import com.bepmo.security.service.JwtBlacklistService;
@@ -88,7 +89,7 @@ public class AuthService {
      * 4. If expired → 401.
      * 5. Valid: revoke current token, issue new pair.
      */
-    @Transactional
+    @Transactional(noRollbackFor = RefreshTokenReuseException.class)
     public AuthResponse refresh(RefreshRequest request) {
         String hash = hashToken(request.refreshToken());
 
@@ -99,7 +100,7 @@ public class AuthService {
             // Reuse detected — revoke entire family
             log.warn("Refresh token reuse detected for userId={}", stored.getUserId());
             refreshTokenRepository.revokeAllByUserId(stored.getUserId());
-            throw new AppException(HttpStatus.UNAUTHORIZED, "Refresh token reuse detected. Please login again.");
+            throw new RefreshTokenReuseException();
         }
 
         if (stored.isExpired()) {

@@ -143,6 +143,34 @@ class RestaurantServiceTest {
     }
 
     @Test
+    @DisplayName("requireViewableRestaurant: ACTIVE public cho anonymous")
+    void requireViewableRestaurant_active_isPublic() {
+        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+
+        assertThat(restaurantService.requireViewableRestaurant(1L, null)).isSameAs(restaurant);
+    }
+
+    @Test
+    @DisplayName("requireViewableRestaurant: HIDDEN trả 404 cho anonymous")
+    void requireViewableRestaurant_hiddenAnonymous_returns404() {
+        restaurant.setStatus(RestaurantStatus.HIDDEN);
+        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+
+        assertThatThrownBy(() -> restaurantService.requireViewableRestaurant(1L, null))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("requireViewableRestaurant: HIDDEN vẫn đọc được cho đúng owner")
+    void requireViewableRestaurant_hiddenOwner_allowed() {
+        restaurant.setStatus(RestaurantStatus.HIDDEN);
+        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+
+        assertThat(restaurantService.requireViewableRestaurant(1L, 10L)).isSameAs(restaurant);
+    }
+
+    @Test
     @DisplayName("getMyRestaurant: owner chưa có quán → 404 NOT_FOUND")
     void getMyRestaurant_notFound() {
         when(restaurantRepository.findByOwnerId(999L)).thenReturn(Optional.empty());

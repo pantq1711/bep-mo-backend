@@ -70,9 +70,10 @@ public class DishController {
     @GetMapping
     @Operation(summary = "List dishes of a restaurant (public)")
     public ResponseEntity<List<DishResponse>> list(
+            @AuthenticationPrincipal Long currentUserId,
             @PathVariable Long restaurantId,
-            @RequestParam(defaultValue = "false") boolean availableOnly
+            @RequestParam(defaultValue = "true") boolean availableOnly
     ) {
-        return ResponseEntity.ok(dishService.list(restaurantId, availableOnly));
+        return ResponseEntity.ok(dishService.list(restaurantId, availableOnly, currentUserId));
     }
 }

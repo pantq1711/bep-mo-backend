@@ -56,7 +56,10 @@ public class IngredientSourceController {
 
     @GetMapping
     @Operation(summary = "List active ingredient sources of a restaurant (public)")
-    public ResponseEntity<List<IngredientSourceResponse>> list(@PathVariable Long restaurantId) {
-        return ResponseEntity.ok(ingredientSourceService.listActive(restaurantId));
+    public ResponseEntity<List<IngredientSourceResponse>> list(
+            @AuthenticationPrincipal Long currentUserId,
+            @PathVariable Long restaurantId
+    ) {
+        return ResponseEntity.ok(ingredientSourceService.listActive(restaurantId, currentUserId));
     }
 }

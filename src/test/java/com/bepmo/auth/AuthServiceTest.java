@@ -1,6 +1,7 @@
 package com.bepmo.auth;
 
 import com.bepmo.auth.dto.AuthDtos.*;
+import com.bepmo.auth.exception.RefreshTokenReuseException;
 import com.bepmo.auth.service.AuthService;
 import com.bepmo.common.exception.AppException;
 import com.bepmo.config.JwtProperties;
@@ -163,7 +164,7 @@ class AuthServiceTest {
 
         assertThatThrownBy(() ->
             authService.refresh(new RefreshRequest("reused-token")))
-            .isInstanceOf(AppException.class)
+            .isInstanceOf(RefreshTokenReuseException.class)
             .satisfies(ex -> assertThat(((AppException) ex).getStatus())
                     .isEqualTo(HttpStatus.UNAUTHORIZED));
 

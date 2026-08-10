@@ -56,20 +56,31 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
-                                "/api/v1/auth/refresh"
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout"
                         ).permitAll()
-
-                        // Owner only — phải khai báo TRƯỚC rule wildcard public bên dưới,
-                        // Spring Security match theo thứ tự, rule đầu tiên khớp sẽ thắng.
-                        // Không có dòng này thì "/api/v1/restaurants/me" bị lọt vào pattern
-                        // GET "/api/v1/restaurants/**" permitAll ở dưới -> thành public nhầm.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/me").authenticated()
-
-                        // Public — Visitor read-only
-                        .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/**").permitAll()
 
                         // Admin only
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+
+                        // Owner API — declare before public GET wildcard because Spring Security
+                        // applies the first matching rule. Keeping writes OWNER-only prevents an
+                        // authenticated ADMIN account from accidentally using owner workflows.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/me")
+                                .hasRole("RESTAURANT_OWNER")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/restaurants/**")
+                                .hasRole("RESTAURANT_OWNER")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/restaurants/**")
+                                .hasRole("RESTAURANT_OWNER")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/restaurants/**")
+                                .hasRole("RESTAURANT_OWNER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/restaurants/**")
+                                .hasRole("RESTAURANT_OWNER")
+
+                        // Public — Visitor read-only. Individual services still enforce
+                        // restaurant visibility so nested resources of HIDDEN restaurants
+                        // are not exposed to anonymous visitors.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/**").permitAll()
 
                         // Everything else requires authentication
                         .anyRequest().authenticated()

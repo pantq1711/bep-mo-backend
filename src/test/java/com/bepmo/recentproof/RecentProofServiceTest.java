@@ -90,10 +90,11 @@ class RecentProofServiceTest {
     @Test
     @DisplayName("listRecentActive: gọi đúng repository method top3 theo uploadedAt desc")
     void listRecentActive_callsTop3Query() {
+        when(restaurantService.requireViewableRestaurant(1L, null)).thenReturn(restaurant);
         when(recentProofRepository.findTop3ByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
                 .thenReturn(java.util.List.of());
 
-        recentProofService.listRecentActive(1L);
+        recentProofService.listRecentActive(1L, null);
 
         verify(recentProofRepository).findTop3ByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE);
     }

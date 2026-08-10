@@ -109,12 +109,37 @@ class DishServiceTest {
     @Test
     @DisplayName("list: availableOnly=true → gọi đúng repository method lọc theo isAvailable")
     void list_availableOnly() {
+        when(restaurantService.requireViewableRestaurant(1L, null)).thenReturn(restaurant);
         when(dishRepository.findByRestaurantIdAndIsAvailableTrue(1L)).thenReturn(java.util.List.of(dish));
 
-        var result = dishService.list(1L, true);
+        var result = dishService.list(1L, true, null);
 
         assertThat(result).hasSize(1);
+        verify(restaurantService).requireViewableRestaurant(1L, null);
         verify(dishRepository).findByRestaurantIdAndIsAvailableTrue(1L);
         verify(dishRepository, never()).findByRestaurantId(anyLong());
+    }
+
+    @Test
+    @DisplayName("list: availableOnly=false không có auth → 401, không lộ món đang ẩn")
+    void list_allWithoutAuthentication_unauthorized() {
+        assertThatThrownBy(() -> dishService.list(1L, false, null))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED));
+
+        verifyNoInteractions(dishRepository);
+    }
+
+    @Test
+    @DisplayName("list: owner có thể lấy cả món unavailable để quản lý")
+    void list_allForOwner_success() {
+        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(dishRepository.findByRestaurantId(1L)).thenReturn(java.util.List.of(dish));
+
+        var result = dishService.list(1L, false, 10L);
+
+        assertThat(result).hasSize(1);
+        verify(restaurantService).requireOwnedRestaurant(1L, 10L);
+        verify(dishRepository).findByRestaurantId(1L);
     }
 }

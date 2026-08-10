@@ -66,7 +66,17 @@ public class DishService {
     }
 
     @Transactional(readOnly = true)
-    public List<DishResponse> list(Long restaurantId, boolean availableOnly) {
+    public List<DishResponse> list(Long restaurantId, boolean availableOnly, Long currentUserId) {
+        if (availableOnly) {
+            restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
+        } else {
+            if (currentUserId == null) {
+                throw new AppException(HttpStatus.UNAUTHORIZED,
+                        "Authentication required to list unavailable dishes");
+            }
+            restaurantService.requireOwnedRestaurant(restaurantId, currentUserId);
+        }
+
         List<Dish> dishes = availableOnly
                 ? dishRepository.findByRestaurantIdAndIsAvailableTrue(restaurantId)
                 : dishRepository.findByRestaurantId(restaurantId);

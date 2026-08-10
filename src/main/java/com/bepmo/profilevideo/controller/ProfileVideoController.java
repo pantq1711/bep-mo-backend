@@ -34,8 +34,11 @@ public class ProfileVideoController {
 
     @GetMapping
     @Operation(summary = "List active videos of a restaurant (public)")
-    public ResponseEntity<List<ProfileVideoResponse>> list(@PathVariable Long restaurantId) {
-        return ResponseEntity.ok(profileVideoService.listActive(restaurantId));
+    public ResponseEntity<List<ProfileVideoResponse>> list(
+            @AuthenticationPrincipal Long currentUserId,
+            @PathVariable Long restaurantId
+    ) {
+        return ResponseEntity.ok(profileVideoService.listActive(restaurantId, currentUserId));
     }
 
     @PatchMapping("/{videoId}/hide")

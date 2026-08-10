@@ -45,7 +45,10 @@ public class RecentProofController {
 
     @GetMapping
     @Operation(summary = "Get 3 most recent active proofs (public)")
-    public ResponseEntity<List<RecentProofResponse>> listRecent(@PathVariable Long restaurantId) {
-        return ResponseEntity.ok(recentProofService.listRecentActive(restaurantId));
+    public ResponseEntity<List<RecentProofResponse>> listRecent(
+            @AuthenticationPrincipal Long currentUserId,
+            @PathVariable Long restaurantId
+    ) {
+        return ResponseEntity.ok(recentProofService.listRecentActive(restaurantId, currentUserId));
     }
 }

@@ -70,7 +70,8 @@ public class ProfileVideoService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProfileVideoResponse> listActive(Long restaurantId) {
+    public List<ProfileVideoResponse> listActive(Long restaurantId, Long currentUserId) {
+        restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
         return profileVideoRepository.findByRestaurantIdAndStatus(restaurantId, VideoStatus.ACTIVE)
                 .stream().map(this::toResponse).toList();
     }

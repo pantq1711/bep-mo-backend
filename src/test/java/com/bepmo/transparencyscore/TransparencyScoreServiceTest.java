@@ -10,7 +10,9 @@ import com.bepmo.profilevideo.repository.ProfileVideoRepository;
 import com.bepmo.recentproof.entity.RecentProof;
 import com.bepmo.recentproof.entity.RecentProofStatus;
 import com.bepmo.recentproof.repository.RecentProofRepository;
-import com.bepmo.restaurant.repository.RestaurantRepository;
+import com.bepmo.restaurant.entity.Restaurant;
+import com.bepmo.restaurant.entity.RestaurantStatus;
+import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.transparencyscore.dto.TransparencyScoreDtos.TransparencyScoreResponse;
 import com.bepmo.transparencyscore.service.TransparencyScoreService;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +41,7 @@ class TransparencyScoreServiceTest {
 
     @Mock StringRedisTemplate redisTemplate;
     @Mock ValueOperations<String, String> valueOperations;
-    @Mock RestaurantRepository restaurantRepository;
+    @Mock RestaurantService restaurantService;
     @Mock IngredientSourceRepository ingredientSourceRepository;
     @Mock ProfileVideoRepository profileVideoRepository;
     @Mock RecentProofRepository recentProofRepository;
@@ -48,18 +50,18 @@ class TransparencyScoreServiceTest {
 
     @BeforeEach
     void setUp() {
-        // lenient() vì 2 test không đụng tới stub này: getScore_restaurantNotFound
-        // dùng id khác (999L, tự stub riêng), evictCache_deletesCorrectKey không gọi
-        // getScore() nên không bao giờ chạm restaurantRepository.existsById(1L).
-        lenient().when(restaurantRepository.existsById(1L)).thenReturn(true);
+        Restaurant restaurant = Restaurant.builder()
+                .id(1L).ownerId(10L).status(RestaurantStatus.ACTIVE).build();
+        lenient().when(restaurantService.requireViewableRestaurant(1L, null)).thenReturn(restaurant);
     }
 
     @Test
     @DisplayName("getScore: quán không tồn tại → 404, không đụng Redis")
     void getScore_restaurantNotFound() {
-        when(restaurantRepository.existsById(999L)).thenReturn(false);
+        when(restaurantService.requireViewableRestaurant(999L, null))
+                .thenThrow(new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
 
-        assertThatThrownBy(() -> transparencyScoreService.getScore(999L))
+        assertThatThrownBy(() -> transparencyScoreService.getScore(999L, null))
                 .isInstanceOf(AppException.class)
                 .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
 
@@ -72,7 +74,7 @@ class TransparencyScoreServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("score:restaurant:1")).thenReturn("55");
 
-        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
 
         assertThat(result.score()).isEqualTo(55);
         assertThat(result.maxScore()).isEqualTo(100);
@@ -91,7 +93,7 @@ class TransparencyScoreServiceTest {
         when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
-        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
 
         assertThat(result.score()).isEqualTo(0);
     }
@@ -117,7 +119,7 @@ class TransparencyScoreServiceTest {
         when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
                 .thenReturn(Optional.of(freshProof));
 
-        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
 
         assertThat(result.score()).isEqualTo(100); // 15+20+20+15+10 + 20 = 100
     }
@@ -136,7 +138,7 @@ class TransparencyScoreServiceTest {
         when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
                 .thenReturn(Optional.of(proof10DaysAgo));
 
-        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
 
         assertThat(result.score()).isEqualTo(10);
     }
@@ -155,7 +157,7 @@ class TransparencyScoreServiceTest {
         when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
                 .thenReturn(Optional.of(oldProof));
 
-        TransparencyScoreResponse result = transparencyScoreService.getScore(1L);
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
 
         assertThat(result.score()).isEqualTo(0);
     }
@@ -171,7 +173,7 @@ class TransparencyScoreServiceTest {
         when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
-        transparencyScoreService.getScore(1L);
+        transparencyScoreService.getScore(1L, null);
 
         verify(valueOperations).set(eq("score:restaurant:1"), eq("0"), argThat((Duration d) -> d.getSeconds() > 0));
     }

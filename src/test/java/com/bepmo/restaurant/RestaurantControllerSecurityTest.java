@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.OffsetDateTime;
@@ -62,6 +63,21 @@ class RestaurantControllerSecurityTest {
     void getMine_withoutToken_returns401NotPublic() throws Exception {
         mockMvc.perform(get("/api/v1/restaurants/me"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /restaurants/me với ADMIN -> 403, route này chỉ dành cho RESTAURANT_OWNER")
+    void getMine_asAdmin_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/restaurants/me"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("GET /restaurants/{id} với id sai kiểu -> 400, không rơi vào generic 500")
+    void getById_invalidPathType_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/restaurants/not-a-number"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -89,10 +89,11 @@ class IngredientSourceServiceTest {
     @Test
     @DisplayName("listActive: chỉ trả về source ACTIVE")
     void listActive_onlyActive() {
+        when(restaurantService.requireViewableRestaurant(1L, null)).thenReturn(restaurant);
         when(ingredientSourceRepository.findByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
                 .thenReturn(java.util.List.of(source));
 
-        var result = ingredientSourceService.listActive(1L);
+        var result = ingredientSourceService.listActive(1L, null);
 
         assertThat(result).hasSize(1);
     }

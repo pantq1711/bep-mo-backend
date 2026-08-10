@@ -64,7 +64,8 @@ public class IngredientSourceService {
     }
 
     @Transactional(readOnly = true)
-    public List<IngredientSourceResponse> listActive(Long restaurantId) {
+    public List<IngredientSourceResponse> listActive(Long restaurantId, Long currentUserId) {
+        restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
         return ingredientSourceRepository.findByRestaurantIdAndStatus(restaurantId, IngredientSourceStatus.ACTIVE)
                 .stream().map(this::toResponse).toList();
     }

@@ -1,6 +1,5 @@
 package com.bepmo.transparencyscore.service;
 
-import com.bepmo.common.exception.AppException;
 import com.bepmo.ingredientsource.entity.IngredientSourceStatus;
 import com.bepmo.ingredientsource.repository.IngredientSourceRepository;
 import com.bepmo.profilevideo.entity.VideoStatus;
@@ -9,13 +8,14 @@ import com.bepmo.profilevideo.repository.ProfileVideoRepository;
 import com.bepmo.recentproof.entity.RecentProof;
 import com.bepmo.recentproof.entity.RecentProofStatus;
 import com.bepmo.recentproof.repository.RecentProofRepository;
-import com.bepmo.restaurant.repository.RestaurantRepository;
+import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.transparencyscore.dto.TransparencyScoreDtos.TransparencyScoreResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -60,16 +60,14 @@ public class TransparencyScoreService {
     private static final int FRESHNESS_WITHIN_14_DAYS = 10;
 
     private final StringRedisTemplate redisTemplate;
-    private final RestaurantRepository restaurantRepository;
+    private final RestaurantService restaurantService;
     private final IngredientSourceRepository ingredientSourceRepository;
     private final ProfileVideoRepository profileVideoRepository;
     private final RecentProofRepository recentProofRepository;
 
     @Transactional(readOnly = true)
-    public TransparencyScoreResponse getScore(Long restaurantId) {
-        if (!restaurantRepository.existsById(restaurantId)) {
-            throw new AppException(HttpStatus.NOT_FOUND, "Restaurant not found");
-        }
+    public TransparencyScoreResponse getScore(Long restaurantId, Long currentUserId) {
+        restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
 
         String key = cacheKey(restaurantId);
         String cached = redisTemplate.opsForValue().get(key);
@@ -84,9 +82,25 @@ public class TransparencyScoreService {
         return new TransparencyScoreResponse(restaurantId, score, MAX_SCORE);
     }
 
-    // Gọi sau khi commit mọi thao tác ghi vào profile_videos / ingredient_sources / recent_proofs
+    // Writer services call this inside their DB transaction. Delete immediately only when
+    // no transaction is active; otherwise defer until commit. This closes the race where a
+    // concurrent reader could repopulate the cache from old committed rows before the writer
+    // transaction commits, leaving a stale score after commit.
     public void evictCache(Long restaurantId) {
-        redisTemplate.delete(cacheKey(restaurantId));
+        Runnable evict = () -> redisTemplate.delete(cacheKey(restaurantId));
+
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evict.run();
+                }
+            });
+            return;
+        }
+
+        evict.run();
     }
 
     // ── Calculation ───────────────────────────────────────────────────────────

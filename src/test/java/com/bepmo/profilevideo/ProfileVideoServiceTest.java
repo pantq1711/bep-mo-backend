@@ -104,10 +104,11 @@ class ProfileVideoServiceTest {
     @Test
     @DisplayName("listActive: chỉ trả về video ACTIVE")
     void listActive_onlyActiveVideos() {
+        when(restaurantService.requireViewableRestaurant(1L, null)).thenReturn(restaurant);
         when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE))
                 .thenReturn(java.util.List.of(video));
 
-        var result = profileVideoService.listActive(1L);
+        var result = profileVideoService.listActive(1L, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).status()).isEqualTo(VideoStatus.ACTIVE);

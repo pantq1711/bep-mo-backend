@@ -119,8 +119,26 @@ public class RestaurantService {
         Restaurant restaurant = restaurantRepository.findById(restaurantId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
 
-        if (!restaurant.getOwnerId().equals(currentUserId)) {
+        if (currentUserId == null || !restaurant.getOwnerId().equals(currentUserId)) {
             throw new AppException(HttpStatus.FORBIDDEN, "You do not own this restaurant");
+        }
+
+        return restaurant;
+    }
+
+    /**
+     * Public nested resources follow the same visibility semantics as the restaurant
+     * profile: ACTIVE is public; HIDDEN is only visible to its authenticated owner.
+     * Return 404 to anonymous/non-owner callers so moderation state does not leak.
+     */
+    @Transactional(readOnly = true)
+    public Restaurant requireViewableRestaurant(Long restaurantId, Long currentUserId) {
+        Restaurant restaurant = restaurantRepository.findById(restaurantId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+
+        boolean isOwner = currentUserId != null && restaurant.getOwnerId().equals(currentUserId);
+        if (restaurant.getStatus() != RestaurantStatus.ACTIVE && !isOwner) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Restaurant not found");
         }
 
         return restaurant;

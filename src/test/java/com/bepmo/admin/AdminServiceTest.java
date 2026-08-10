@@ -117,6 +117,22 @@ class AdminServiceTest {
     }
 
     @Test
+    @DisplayName("unhideVideo: không được phục hồi video REPLACED/DELETED thành ACTIVE")
+    void unhideVideo_nonHidden_throwsConflict() {
+        ProfileVideo video = ProfileVideo.builder()
+                .id(51L).restaurantId(1L).type(VideoType.KITCHEN).status(VideoStatus.REPLACED).build();
+        when(profileVideoRepository.findById(51L)).thenReturn(Optional.of(video));
+
+        assertThatThrownBy(() -> adminService.unhideVideo(51L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        verify(profileVideoRepository, never())
+                .existsByRestaurantIdAndTypeAndStatus(anyLong(), any(), any());
+        verify(transparencyScoreService, never()).evictCache(anyLong());
+    }
+
+    @Test
     @DisplayName("hideVideo: đặt HIDDEN + evict cache")
     void hideVideo_setsHiddenAndEvicts() {
         ProfileVideo video = ProfileVideo.builder()
@@ -144,6 +160,18 @@ class AdminServiceTest {
         verify(transparencyScoreService).evictCache(1L);
     }
 
+    @Test
+    @DisplayName("unhideIngredientSource: source DELETED không được resurrect")
+    void unhideIngredientSource_deleted_throwsConflict() {
+        IngredientSource source = IngredientSource.builder()
+                .id(201L).restaurantId(1L).status(IngredientSourceStatus.DELETED).build();
+        when(ingredientSourceRepository.findById(201L)).thenReturn(Optional.of(source));
+
+        assertThatThrownBy(() -> adminService.unhideIngredientSource(201L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
     // ── RecentProof ───────────────────────────────────────────────────────────
 
     @Test
@@ -157,6 +185,18 @@ class AdminServiceTest {
 
         assertThat(proof.getStatus()).isEqualTo(RecentProofStatus.ACTIVE);
         verify(transparencyScoreService).evictCache(1L);
+    }
+
+    @Test
+    @DisplayName("unhideRecentProof: proof DELETED không được resurrect")
+    void unhideRecentProof_deleted_throwsConflict() {
+        RecentProof proof = RecentProof.builder()
+                .id(301L).restaurantId(1L).status(RecentProofStatus.DELETED).build();
+        when(recentProofRepository.findById(301L)).thenReturn(Optional.of(proof));
+
+        assertThatThrownBy(() -> adminService.unhideRecentProof(301L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT));
     }
 
     // ── User ──────────────────────────────────────────────────────────────────

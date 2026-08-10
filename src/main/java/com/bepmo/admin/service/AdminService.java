@@ -69,6 +69,9 @@ public class AdminService {
     @Transactional
     public void unhideVideo(Long videoId) {
         ProfileVideo v = findVideo(videoId);
+        if (v.getStatus() != VideoStatus.HIDDEN) {
+            throw new AppException(HttpStatus.CONFLICT, "Only a hidden video can be unhidden");
+        }
 
         // Không thể unhide thẳng về ACTIVE nếu quán đã có video ACTIVE khác cùng type
         // trong lúc video này bị hide (chủ quán có thể đã upload video mới thay thế) —
@@ -96,6 +99,9 @@ public class AdminService {
     @Transactional
     public void unhideIngredientSource(Long sourceId) {
         IngredientSource s = findIngredientSource(sourceId);
+        if (s.getStatus() != IngredientSourceStatus.HIDDEN) {
+            throw new AppException(HttpStatus.CONFLICT, "Only a hidden ingredient source can be unhidden");
+        }
         s.setStatus(IngredientSourceStatus.ACTIVE);
         transparencyScoreService.evictCache(s.getRestaurantId());
     }
@@ -112,6 +118,9 @@ public class AdminService {
     @Transactional
     public void unhideRecentProof(Long proofId) {
         RecentProof p = findRecentProof(proofId);
+        if (p.getStatus() != RecentProofStatus.HIDDEN) {
+            throw new AppException(HttpStatus.CONFLICT, "Only a hidden recent proof can be unhidden");
+        }
         p.setStatus(RecentProofStatus.ACTIVE);
         transparencyScoreService.evictCache(p.getRestaurantId());
     }

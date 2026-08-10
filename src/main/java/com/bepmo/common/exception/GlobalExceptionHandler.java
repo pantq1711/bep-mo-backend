@@ -10,6 +10,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -64,6 +65,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMissingParam(MissingServletRequestParameterException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST,
                 "Required parameter missing: " + ex.getParameterName());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST,
+                "Invalid value for parameter: " + ex.getName());
     }
 
     // ── 404: No handler found for path ───────────────────────────────────────
