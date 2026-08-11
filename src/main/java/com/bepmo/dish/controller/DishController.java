@@ -12,7 +12,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/restaurants/{restaurantId}/dishes")
@@ -50,10 +49,10 @@ public class DishController {
             @AuthenticationPrincipal Long currentUserId,
             @PathVariable Long restaurantId,
             @PathVariable Long dishId,
-            @RequestBody Map<String, Boolean> body
+            @Valid @RequestBody SetAvailabilityRequest request
     ) {
-        boolean available = Boolean.TRUE.equals(body.get("isAvailable"));
-        return ResponseEntity.ok(dishService.setAvailability(restaurantId, dishId, currentUserId, available));
+        return ResponseEntity.ok(dishService.setAvailability(
+                restaurantId, dishId, currentUserId, request.isAvailable()));
     }
 
     @DeleteMapping("/{dishId}")

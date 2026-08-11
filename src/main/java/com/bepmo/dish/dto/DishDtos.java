@@ -25,6 +25,10 @@ public class DishDtos {
         Boolean isAvailable
     ) {}
 
+    public record SetAvailabilityRequest(
+        @NotNull Boolean isAvailable
+    ) {}
+
     public record DishResponse(
         Long id,
         Long restaurantId,

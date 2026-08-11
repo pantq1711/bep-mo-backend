@@ -11,6 +11,8 @@ import com.bepmo.recentproof.repository.RecentProofRepository;
 import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.transparencyscore.dto.TransparencyScoreDtos.TransparencyScoreResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +39,7 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TransparencyScoreService {
 
     private static final String CACHE_KEY_PREFIX = "score:restaurant:";
@@ -71,27 +74,50 @@ public class TransparencyScoreService {
         restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
 
         String key = cacheKey(restaurantId);
-        String cached = redisTemplate.opsForValue().get(key);
+        boolean redisAvailable = true;
+        String cached = null;
+        try {
+            cached = redisTemplate.opsForValue().get(key);
+        } catch (DataAccessException ex) {
+            redisAvailable = false;
+            log.warn("Transparency Score cache read failed for restaurant {}. Falling back to DB calculation: {}",
+                    restaurantId, ex.getMessage());
+        }
         if (cached != null) {
             return cachedResponse(restaurantId, cached);
         }
 
         // Cache miss: serialize this calculation with every score-affecting writer for the
-        // same restaurant. This closes the stale-repopulation race that afterCommit eviction
-        // alone cannot close. Re-check Redis after acquiring the lock because another cache
-        // miss may have populated it while this request was waiting.
+        // same restaurant. Re-check Redis after acquiring the lock because another cache
+        // miss may have populated it while this request was waiting. If Redis was already
+        // unavailable on the first read, skip further cache calls for this request and use DB.
         restaurantService.requireViewableRestaurantForUpdate(restaurantId, currentUserId);
-        cached = redisTemplate.opsForValue().get(key);
-        if (cached != null) {
-            return cachedResponse(restaurantId, cached);
+        if (redisAvailable) {
+            try {
+                cached = redisTemplate.opsForValue().get(key);
+            } catch (DataAccessException ex) {
+                redisAvailable = false;
+                log.warn("Transparency Score cache re-check failed for restaurant {}. Continuing with DB calculation: {}",
+                        restaurantId, ex.getMessage());
+            }
+            if (cached != null) {
+                return cachedResponse(restaurantId, cached);
+            }
         }
 
         ScoreCalculation calculation = calculate(restaurantId, OffsetDateTime.now());
-        redisTemplate.opsForValue().set(
-                key,
-                String.valueOf(calculation.score()),
-                Duration.ofSeconds(calculation.ttlSeconds())
-        );
+        if (redisAvailable) {
+            try {
+                redisTemplate.opsForValue().set(
+                        key,
+                        String.valueOf(calculation.score()),
+                        Duration.ofSeconds(calculation.ttlSeconds())
+                );
+            } catch (DataAccessException ex) {
+                log.warn("Transparency Score cache write failed for restaurant {}. Returning DB-calculated score: {}",
+                        restaurantId, ex.getMessage());
+            }
+        }
 
         return new TransparencyScoreResponse(restaurantId, calculation.score(), MAX_SCORE);
     }
@@ -103,21 +129,20 @@ public class TransparencyScoreService {
     /**
      * Score-affecting writers call this while holding the per-restaurant DB row lock.
      *
-     * We deliberately use a double-delete when a transaction is active:
-     * 1) delete NOW, while the writer still owns the DB lock. A cache-miss reader then blocks
-     *    on that lock instead of calculating from the writer's old committed state;
-     * 2) delete again AFTER COMMIT as a safety net for any cache value written before the first
-     *    delete or by code paths outside the normal lock protocol.
+     * When a DB transaction is active, defer Redis I/O until AFTER COMMIT. This keeps cache
+     * availability outside the business transaction boundary: a Redis outage must never roll
+     * back a successfully validated restaurant/video/proof mutation. Cache-miss score readers
+     * also acquire the same restaurant row lock before calculating and writing a new value, so
+     * the after-commit delete removes any value produced from the pre-commit state.
      *
-     * If the DB transaction rolls back, the first delete only causes an unnecessary recompute;
-     * it cannot make the score incorrect.
+     * Outside a DB transaction, evict immediately. Redis failures are logged and treated as a
+     * cache degradation only; PostgreSQL remains the source of truth.
      */
     public void evictCache(Long restaurantId) {
-        Runnable evict = () -> redisTemplate.delete(cacheKey(restaurantId));
+        Runnable evict = () -> safeDeleteCache(restaurantId);
 
         if (TransactionSynchronizationManager.isActualTransactionActive()
                 && TransactionSynchronizationManager.isSynchronizationActive()) {
-            evict.run();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
@@ -128,6 +153,15 @@ public class TransparencyScoreService {
         }
 
         evict.run();
+    }
+
+    private void safeDeleteCache(Long restaurantId) {
+        try {
+            redisTemplate.delete(cacheKey(restaurantId));
+        } catch (DataAccessException ex) {
+            log.warn("Transparency Score cache eviction failed for restaurant {}. DB mutation remains committed: {}",
+                    restaurantId, ex.getMessage());
+        }
     }
 
     // ── Calculation ───────────────────────────────────────────────────────────

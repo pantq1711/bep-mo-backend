@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -201,6 +203,45 @@ class TransparencyScoreServiceTest {
     }
 
     @Test
+    @DisplayName("getScore: Redis unavailable khi đọc cache → tính từ DB và vẫn trả score")
+    void getScore_redisReadFailure_fallsBackToDatabase() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1"))
+                .thenThrow(new RedisConnectionFailureException("Redis down"));
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
+
+        assertThat(result.score()).isEqualTo(0);
+        verify(restaurantService).requireViewableRestaurantForUpdate(1L, null);
+        verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("getScore: Redis lỗi khi ghi cache → vẫn trả score đã tính từ DB")
+    void getScore_redisWriteFailure_returnsCalculatedScore() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        doThrow(new RedisConnectionFailureException("Redis down"))
+                .when(valueOperations).set(eq("score:restaurant:1"), eq("0"), any(Duration.class));
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
+
+        assertThat(result.score()).isEqualTo(0);
+    }
+
+    @Test
     @DisplayName("getScore: cache miss → ghi lại cache với TTL dương (có jitter)")
     void getScore_cacheMiss_setsCacheWithPositiveTtl() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -225,22 +266,32 @@ class TransparencyScoreServiceTest {
     }
 
     @Test
-    @DisplayName("evictCache: trong transaction → delete ngay + đăng ký delete lại afterCommit")
-    void evictCache_insideTransaction_doubleDeletes() {
+    @DisplayName("evictCache: trong transaction → không gọi Redis trước commit, chỉ delete afterCommit")
+    void evictCache_insideTransaction_deletesOnlyAfterCommit() {
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);
         try {
             transparencyScoreService.evictCache(1L);
 
-            verify(redisTemplate, times(1)).delete("score:restaurant:1");
+            verify(redisTemplate, never()).delete("score:restaurant:1");
             assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
 
             TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
-            verify(redisTemplate, times(2)).delete("score:restaurant:1");
+            verify(redisTemplate, times(1)).delete("score:restaurant:1");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
             TransactionSynchronizationManager.setActualTransactionActive(false);
         }
+    }
+
+    @Test
+    @DisplayName("evictCache: Redis unavailable → không propagate lỗi cache sang business flow")
+    void evictCache_redisFailure_doesNotThrow() {
+        doThrow(new RedisConnectionFailureException("Redis down"))
+                .when(redisTemplate).delete("score:restaurant:1");
+
+        assertThatCode(() -> transparencyScoreService.evictCache(1L))
+                .doesNotThrowAnyException();
     }
 
     private ProfileVideo video(VideoType type) {

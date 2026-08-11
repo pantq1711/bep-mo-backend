@@ -1,122 +1,88 @@
-# Bếp Mở — Backend signed-media refactor patch
+# Bếp Mở — Backend post-review hotfix v2
 
-## Baseline đã xác minh
+## Baseline
 
-- Archive: `bep-mo-backend(5).rar`
-- Branch/HEAD trong archive: `main @ 64c72a8`
-- Archive có working-tree WIP từ trước. Patch này được tạo bằng cách so sánh **trực tiếp nội dung archive đã upload** với work copy sau refactor, không diff từ HEAD sạch, để không ghi đè WIP cũ.
-- Không commit, không push.
+Patch này được tạo sau signed-media refactor và xử lý các lỗi được xác minh lại từ source thực tế.
 
-## Thay đổi chính
+Có 2 cách apply:
 
-- Thêm `POST /api/v1/media/upload-sessions` cho signed direct-to-Cloudinary upload capability, bind `ownerId + restaurantId + purpose + type + resourceType + expectedPublicId + expiresAt`.
-- Thêm state machine `ISSUED -> VALIDATED -> CONSUMED`, cùng `REJECTED` và `EXPIRED`. `VALIDATED` là trạng thái nội bộ trong short transaction.
-- Gom trust boundary Cloudinary vào `CloudinaryMediaGateway`: ký request, verify response signature, gọi Admin API lấy metadata gốc.
-- Cloudinary Admin API/verification chạy ngoài DB finalization transaction; transaction chỉ lock/recheck session, idempotency, create resource, consume session và evict score cache.
-- `ProfileVideo` và `RecentProof` có `media_upload_session_id` unique (nullable để tương thích dữ liệu legacy). Retry sau `CONSUMED` trả record cũ và bypass Cloudinary lookup.
-- Publish payload tối giản: video = `uploadSessionId + version + responseSignature`; proof = các field đó + `note`. Type/publicId/URL/bytes/duration/mediaKind không còn là client claims.
-- Policy backend: ảnh <= 10 MiB (`jpg/jpeg/png/webp`); video <= 100 MiB, <= 60 giây (`mp4/webm/mov`).
-- Bổ sung Flyway `V4__signed_media_upload_sessions.sql`, Cloudinary backend config trong `application.yml`, `.example`, Docker Compose và `.env.example`.
-- Cloudinary Java SDK pin `cloudinary-http5:2.3.2`.
+- `APPLY_FROM_SIGNED_MEDIA.patch`: dùng khi source của bạn **đã có signed-media refactor** trước đó.
+- `APPLY_FROM_ORIGINAL_RAR.patch`: cumulative patch, dùng trực tiếp trên baseline `bep-mo-backend(5).rar` đã upload trong chat.
 
-## Migration
+Không apply cả hai patch lên cùng một source.
 
-- `src/main/resources/db/migration/V4__signed_media_upload_sessions.sql`
+## File thay đổi
 
-## API contract mới
+1. `src/main/java/com/bepmo/transparencyscore/service/TransparencyScoreService.java`
+2. `src/main/java/com/bepmo/dish/controller/DishController.java`
+3. `src/main/java/com/bepmo/dish/dto/DishDtos.java`
+4. `src/test/java/com/bepmo/transparencyscore/TransparencyScoreServiceTest.java`
+5. `src/test/java/com/bepmo/dish/DishDtosValidationTest.java` (new)
 
-```json
-POST /api/v1/media/upload-sessions
-{
-  "restaurantId": 1,
-  "purpose": "PROFILE_VIDEO",
-  "profileVideoType": "KITCHEN"
-}
+## Fix 1 — Redis graceful degradation cho Transparency Score
+
+- Redis cache read failure không còn làm endpoint score trả 500 ngay.
+- Khi Redis unavailable, service tính score từ PostgreSQL và vẫn trả response.
+- Redis cache write failure chỉ log warning, không làm mất score đã tính.
+- Không catch lỗi DB/business chung; chỉ cache exception thuộc `DataAccessException`.
+
+## Fix 2 — Redis eviction không còn nằm trên critical DB mutation transaction
+
+Khi `evictCache()` được gọi trong transaction:
+
+- không gọi Redis DELETE ngay trong transaction;
+- đăng ký `afterCommit` callback;
+- chỉ DELETE Redis sau khi DB commit thành công;
+- Redis DELETE failure được log và không propagate ngược vào business flow.
+
+Mục tiêu: Redis là cache, không được làm rollback ProfileVideo/RecentProof/IngredientSource mutation đã hợp lệ.
+
+## Fix 3 — Dish availability request có validation
+
+Thay raw:
+
+```java
+Map<String, Boolean>
 ```
 
-Hoặc recent proof:
+bằng DTO:
 
-```json
-{
-  "restaurantId": 1,
-  "purpose": "RECENT_PROOF",
-  "recentProofType": "INVOICE"
-}
+```java
+SetAvailabilityRequest(@NotNull Boolean isAvailable)
 ```
 
-Finalize video:
+JSON contract vẫn là:
 
 ```json
-{
-  "uploadSessionId": "<uuid>",
-  "version": 1234567890,
-  "responseSignature": "<cloudinary-response-signature>"
-}
+{ "isAvailable": true }
 ```
 
-Finalize recent proof thêm `note` tùy chọn.
+Nhưng request `{}` hoặc `{ "isAvailable": null }` sẽ bị Bean Validation từ chối thay vì âm thầm hiểu thành `false`.
+
+## Tests bổ sung/cập nhật
+
+- Redis read failure -> fallback DB.
+- Redis write failure -> vẫn trả calculated score.
+- `evictCache()` trong transaction -> chỉ delete after commit.
+- Redis delete failure -> không throw vào business flow.
+- `SetAvailabilityRequest.isAvailable` null -> validation violation.
 
 ## QA đã thực hiện
 
-- Verified Git/status/log của archive trước khi sửa.
-- Static QA: không còn raw `HttpClient`; crypto/signature chỉ nằm trong `CloudinaryMediaGateway`; Admin API chỉ được gọi từ gateway/verification path ngoài finalization transaction.
-- Static QA: kiểm tra client metadata cũ không còn trong upload/create request DTO.
-- `git diff --check`: không có whitespace error trong task files.
-- `git apply --check`: được kiểm tra lại trên bản copy của chính archive baseline khi đóng gói.
-- `bash ./mvnw -q test`: **CHƯA CHẠY ĐƯỢC** — Maven Wrapper không tải được `apache-maven-3.9.16-bin.zip` từ Maven Central trong environment này. Không có khẳng định test pass.
+- `git diff --check`: PASS cho file hotfix.
+- `git apply --check APPLY_FROM_SIGNED_MEDIA.patch`: PASS trên baseline signed-media đã tái tạo.
+- Apply patch rồi so sánh file output với work copy cuối: byte-for-byte PASS.
+- `git apply --check APPLY_FROM_ORIGINAL_RAR.patch`: PASS trên baseline RAR gốc.
 
-## Known limitations / chưa verify runtime
+## QA chưa thể thực hiện trong environment này
 
-- Chưa chạy real Cloudinary upload/Admin API vì không có credentials runtime.
-- Chưa chạy PostgreSQL/Flyway integration và Docker E2E trong environment này.
-- Webhook, orphan cleanup/reconciliation vẫn là optional/future work; asset upload xong nhưng session bị abandon/reject/expire có thể thành orphan.
-- Signed upload preset là tùy chọn. Nếu cấu hình preset, nên đặt format/file-size constraints tại Cloudinary để reject sớm; backend vẫn verify lại metadata.
+Backend compile/test chưa chạy được vì Maven Wrapper cố tải Maven 3.9.16 từ Maven Central và environment hiện không resolve/download được URL đó.
 
-## File thêm/sửa (35)
+Không claim `mvn test` pass.
 
-- `.env.example`
-- `docker-compose.yml`
-- `pom.xml`
-- `src/main/java/com/bepmo/config/SecurityConfig.java`
-- `src/main/java/com/bepmo/media/controller/MediaUploadController.java`
-- `src/main/java/com/bepmo/media/dto/MediaUploadDtos.java`
-- `src/main/java/com/bepmo/media/entity/MediaResourceType.java`
-- `src/main/java/com/bepmo/media/entity/MediaUploadPurpose.java`
-- `src/main/java/com/bepmo/media/entity/MediaUploadSession.java`
-- `src/main/java/com/bepmo/media/entity/MediaUploadSessionStatus.java`
-- `src/main/java/com/bepmo/media/gateway/CloudinaryMediaGateway.java`
-- `src/main/java/com/bepmo/media/gateway/MediaValidationException.java`
-- `src/main/java/com/bepmo/media/gateway/SignedUploadParameters.java`
-- `src/main/java/com/bepmo/media/gateway/TrustedMediaMetadata.java`
-- `src/main/java/com/bepmo/media/repository/MediaUploadSessionRepository.java`
-- `src/main/java/com/bepmo/media/service/MediaUploadSessionService.java`
-- `src/main/java/com/bepmo/media/service/MediaUploadSessionStateService.java`
-- `src/main/java/com/bepmo/media/service/MediaVerificationService.java`
-- `src/main/java/com/bepmo/profilevideo/controller/ProfileVideoController.java`
-- `src/main/java/com/bepmo/profilevideo/dto/ProfileVideoDtos.java`
-- `src/main/java/com/bepmo/profilevideo/entity/ProfileVideo.java`
-- `src/main/java/com/bepmo/profilevideo/repository/ProfileVideoRepository.java`
-- `src/main/java/com/bepmo/profilevideo/service/ProfileVideoFinalizationService.java`
-- `src/main/java/com/bepmo/profilevideo/service/ProfileVideoService.java`
-- `src/main/java/com/bepmo/recentproof/controller/RecentProofController.java`
-- `src/main/java/com/bepmo/recentproof/dto/RecentProofDtos.java`
-- `src/main/java/com/bepmo/recentproof/entity/RecentProof.java`
-- `src/main/java/com/bepmo/recentproof/repository/RecentProofRepository.java`
-- `src/main/java/com/bepmo/recentproof/service/RecentProofFinalizationService.java`
-- `src/main/java/com/bepmo/recentproof/service/RecentProofService.java`
-- `src/main/resources/application.yml`
-- `src/main/resources/application.yml.example`
-- `src/main/resources/db/migration/V4__signed_media_upload_sessions.sql`
-- `src/test/java/com/bepmo/profilevideo/ProfileVideoServiceTest.java`
-- `src/test/java/com/bepmo/recentproof/RecentProofServiceTest.java`
+## Cố ý chưa sửa trong hotfix này
 
-## Cách áp dụng
+- PUT endpoints đang mang partial-update semantics (PUT-as-PATCH).
+- Disabled user có thể dùng access token hiện tại đến khi token hết hạn nếu chưa blacklist/revoke tức thời.
 
-Từ root của đúng source archive `bep-mo-backend(5).rar` đã giải nén:
-
-```bash
-git apply --check APPLY.patch
-git apply APPLY.patch
-```
-
-Hoặc copy đè các file theo đúng đường dẫn trong ZIP. Không dùng patch này trên một source khác mà chưa review conflict/WIP.
+Hai mục này nên review/test riêng sau khi core demo flow ổn định.
