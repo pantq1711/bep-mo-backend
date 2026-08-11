@@ -2,9 +2,11 @@ package com.bepmo.restaurant.repository;
 
 import com.bepmo.restaurant.entity.Restaurant;
 import com.bepmo.restaurant.entity.RestaurantStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -56,4 +58,14 @@ public interface RestaurantRepository extends JpaRepository<Restaurant, Long> {
     Optional<Restaurant> findByOwnerId(Long ownerId);
 
     boolean existsByOwnerId(Long ownerId);
+
+    /**
+     * Coarse-grained per-restaurant transaction lock used by score-affecting writers and
+     * score cache-miss calculations. PostgreSQL holds the row lock until transaction end,
+     * so concurrent mutations for the same restaurant are serialized while different
+     * restaurants can still proceed independently.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM Restaurant r WHERE r.id = :id")
+    Optional<Restaurant> findByIdForUpdate(@Param("id") Long id);
 }

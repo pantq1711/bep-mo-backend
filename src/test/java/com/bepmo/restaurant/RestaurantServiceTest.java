@@ -107,6 +107,26 @@ class RestaurantServiceTest {
                 .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 
+    @Test
+    @DisplayName("requireOwnedRestaurantForUpdate: dùng repository pessimistic-lock lookup")
+    void requireOwnedRestaurantForUpdate_usesLockedLookup() {
+        when(restaurantRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(restaurant));
+
+        assertThat(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).isSameAs(restaurant);
+
+        verify(restaurantRepository).findByIdForUpdate(1L);
+        verify(restaurantRepository, never()).findById(1L);
+    }
+
+    @Test
+    @DisplayName("requireViewableRestaurantForUpdate: HIDDEN vẫn cho owner sau khi lock")
+    void requireViewableRestaurantForUpdate_hiddenOwner_allowed() {
+        restaurant.setStatus(RestaurantStatus.HIDDEN);
+        when(restaurantRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(restaurant));
+
+        assertThat(restaurantService.requireViewableRestaurantForUpdate(1L, 10L)).isSameAs(restaurant);
+    }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @Test

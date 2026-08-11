@@ -48,7 +48,7 @@ class RecentProofServiceTest {
     @Test
     @DisplayName("create: proofType RECEIVING_VIDEO → mediaKind suy ra là VIDEO")
     void create_receivingVideo_derivesVideoMediaKind() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         ArgumentCaptor<RecentProof> captor = ArgumentCaptor.forClass(RecentProof.class);
         when(recentProofRepository.save(captor.capture())).thenAnswer(i -> i.getArgument(0));
 
@@ -61,7 +61,7 @@ class RecentProofServiceTest {
     @Test
     @DisplayName("create: proofType khác (vd INVOICE) → mediaKind suy ra là IMAGE")
     void create_invoice_derivesImageMediaKind() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         ArgumentCaptor<RecentProof> captor = ArgumentCaptor.forClass(RecentProof.class);
         when(recentProofRepository.save(captor.capture())).thenAnswer(i -> i.getArgument(0));
 
@@ -79,7 +79,7 @@ class RecentProofServiceTest {
                 .proofType(ProofType.INVOICE).mediaKind(MediaKind.IMAGE)
                 .status(RecentProofStatus.ACTIVE).build();
 
-        when(restaurantService.requireOwnedRestaurant(2L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(2L, 10L)).thenReturn(restaurant);
         when(recentProofRepository.findById(300L)).thenReturn(Optional.of(proof));
 
         assertThatThrownBy(() -> recentProofService.delete(2L, 300L, 10L))

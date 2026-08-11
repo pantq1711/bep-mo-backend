@@ -54,13 +54,14 @@ class ProfileVideoServiceTest {
     @Test
     @DisplayName("upload: gọi replaceActive() TRƯỚC khi save video mới cùng type")
     void upload_callsReplaceActiveBeforeSave() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(profileVideoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         profileVideoService.upload(1L, 10L, new UploadVideoRequest(
                 VideoType.KITCHEN, "https://cdn/new.mp4", "pub-2", null, 15, 2000L));
 
-        InOrder order = inOrder(profileVideoRepository);
+        InOrder order = inOrder(restaurantService, profileVideoRepository);
+        order.verify(restaurantService).requireOwnedRestaurantForUpdate(1L, 10L);
         order.verify(profileVideoRepository).replaceActive(1L, VideoType.KITCHEN, VideoStatus.REPLACED, VideoStatus.ACTIVE);
         order.verify(profileVideoRepository).save(any(ProfileVideo.class));
     }
@@ -68,7 +69,7 @@ class ProfileVideoServiceTest {
     @Test
     @DisplayName("upload: thành công → evict transparency score cache")
     void upload_evictsScoreCache() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(profileVideoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         profileVideoService.upload(1L, 10L, new UploadVideoRequest(
@@ -80,7 +81,7 @@ class ProfileVideoServiceTest {
     @Test
     @DisplayName("hide: video thuộc quán khác (path variable sai) → 404")
     void hide_videoBelongsToDifferentRestaurant() {
-        when(restaurantService.requireOwnedRestaurant(2L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(2L, 10L)).thenReturn(restaurant);
         when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video)); // video.restaurantId = 1
 
         assertThatThrownBy(() -> profileVideoService.hide(2L, 50L, 10L))
@@ -89,9 +90,24 @@ class ProfileVideoServiceTest {
     }
 
     @Test
+    @DisplayName("hide: video REPLACED không được chuyển vòng sang HIDDEN")
+    void hide_replaced_throwsConflict() {
+        video.setStatus(VideoStatus.REPLACED);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
+        when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video));
+
+        assertThatThrownBy(() -> profileVideoService.hide(1L, 50L, 10L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        assertThat(video.getStatus()).isEqualTo(VideoStatus.REPLACED);
+        verify(transparencyScoreService, never()).evictCache(anyLong());
+    }
+
+    @Test
     @DisplayName("delete: soft delete → status DELETED, không xoá vật lý, evict cache")
     void delete_softDeletesAndEvictsCache() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video));
 
         profileVideoService.delete(1L, 50L, 10L);

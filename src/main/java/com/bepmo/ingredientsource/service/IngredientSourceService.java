@@ -24,7 +24,7 @@ public class IngredientSourceService {
 
     @Transactional
     public IngredientSourceResponse create(Long restaurantId, Long ownerId, CreateIngredientSourceRequest request) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
 
         IngredientSource source = IngredientSource.builder()
                 .restaurantId(restaurantId)
@@ -57,7 +57,7 @@ public class IngredientSourceService {
 
     @Transactional
     public void delete(Long restaurantId, Long sourceId, Long ownerId) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         IngredientSource source = requireSourceInRestaurant(sourceId, restaurantId);
         source.setStatus(IngredientSourceStatus.DELETED);
         transparencyScoreService.evictCache(restaurantId);

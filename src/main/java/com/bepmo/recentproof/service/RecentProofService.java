@@ -26,7 +26,7 @@ public class RecentProofService {
 
     @Transactional
     public RecentProofResponse create(Long restaurantId, Long ownerId, CreateRecentProofRequest request) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
 
         RecentProof proof = RecentProof.builder()
                 .restaurantId(restaurantId)
@@ -48,7 +48,7 @@ public class RecentProofService {
 
     @Transactional
     public void delete(Long restaurantId, Long proofId, Long ownerId) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         RecentProof proof = requireProofInRestaurant(proofId, restaurantId);
         proof.setStatus(RecentProofStatus.DELETED);
         transparencyScoreService.evictCache(restaurantId);

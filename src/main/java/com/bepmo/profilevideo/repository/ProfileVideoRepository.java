@@ -6,6 +6,7 @@ import com.bepmo.profilevideo.entity.VideoType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,4 +31,6 @@ public interface ProfileVideoRepository extends JpaRepository<ProfileVideo, Long
           AND pv.status = :oldStatus
         """)
     int replaceActive(Long restaurantId, VideoType type, VideoStatus newStatus, VideoStatus oldStatus);
+    @Query("SELECT pv.restaurantId FROM ProfileVideo pv WHERE pv.id = :id")
+    Optional<Long> findRestaurantIdById(@Param("id") Long id);
 }

@@ -127,6 +127,22 @@ public class RestaurantService {
     }
 
     /**
+     * Same ownership guard but obtains a PostgreSQL row lock on the parent restaurant.
+     * Score-affecting mutations use this method so two writers for the same restaurant
+     * cannot interleave between "demote old state" and "insert/activate new state".
+     */
+    @Transactional
+    public Restaurant requireOwnedRestaurantForUpdate(Long restaurantId, Long currentUserId) {
+        Restaurant restaurant = lockRestaurantForUpdate(restaurantId);
+
+        if (currentUserId == null || !restaurant.getOwnerId().equals(currentUserId)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You do not own this restaurant");
+        }
+
+        return restaurant;
+    }
+
+    /**
      * Public nested resources follow the same visibility semantics as the restaurant
      * profile: ACTIVE is public; HIDDEN is only visible to its authenticated owner.
      * Return 404 to anonymous/non-owner callers so moderation state does not leak.
@@ -142,6 +158,30 @@ public class RestaurantService {
         }
 
         return restaurant;
+    }
+
+    /**
+     * Visibility check + transaction lock. Used only on a transparency-score cache miss.
+     * The lock is deliberately exclusive: it serializes the cache-miss calculation with
+     * every score-affecting mutation for this restaurant and makes stale cache repopulation
+     * after a writer commit impossible through application service paths.
+     */
+    @Transactional
+    public Restaurant requireViewableRestaurantForUpdate(Long restaurantId, Long currentUserId) {
+        Restaurant restaurant = lockRestaurantForUpdate(restaurantId);
+
+        boolean isOwner = currentUserId != null && restaurant.getOwnerId().equals(currentUserId);
+        if (restaurant.getStatus() != RestaurantStatus.ACTIVE && !isOwner) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Restaurant not found");
+        }
+
+        return restaurant;
+    }
+
+    @Transactional
+    public Restaurant lockRestaurantForUpdate(Long restaurantId) {
+        return restaurantRepository.findByIdForUpdate(restaurantId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
     }
 
     private String normalizeSearchText(String value) {

@@ -24,7 +24,7 @@ public class ProfileVideoService {
 
     @Transactional
     public ProfileVideoResponse upload(Long restaurantId, Long ownerId, UploadVideoRequest request) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
 
         // Demote video ACTIVE cùng type (nếu có) thành REPLACED trước khi insert video mới.
         // Bắt buộc làm bước này trước insert, không phải sau — nếu không sẽ đụng
@@ -52,16 +52,21 @@ public class ProfileVideoService {
 
     @Transactional
     public void hide(Long restaurantId, Long videoId, Long ownerId) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         ProfileVideo video = requireVideoInRestaurant(videoId, restaurantId);
+        if (video.getStatus() == VideoStatus.HIDDEN) return;
+        if (video.getStatus() != VideoStatus.ACTIVE) {
+            throw new AppException(HttpStatus.CONFLICT, "Only an active video can be hidden");
+        }
         video.setStatus(VideoStatus.HIDDEN);
         transparencyScoreService.evictCache(restaurantId);
     }
 
     @Transactional
     public void delete(Long restaurantId, Long videoId, Long ownerId) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         ProfileVideo video = requireVideoInRestaurant(videoId, restaurantId);
+        if (video.getStatus() == VideoStatus.DELETED) return;
         // Soft delete — giữ record để audit, không xoá vật lý.
         // Cloudinary file gốc KHÔNG bị xoá ở bước này (backend không giữ Cloudinary API secret
         // cho write access trong luồng client-upload hiện tại) — chấp nhận là known limitation của MVP.

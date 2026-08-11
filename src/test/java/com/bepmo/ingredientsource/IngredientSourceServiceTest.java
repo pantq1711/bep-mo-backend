@@ -51,7 +51,7 @@ class IngredientSourceServiceTest {
     @Test
     @DisplayName("create: thành công → status ACTIVE, evict score cache")
     void create_success() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(ingredientSourceRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         IngredientSourceResponse result = ingredientSourceService.create(1L, 10L,
@@ -76,7 +76,7 @@ class IngredientSourceServiceTest {
     @Test
     @DisplayName("delete: soft delete → status DELETED, evict cache")
     void delete_softDeletesAndEvictsCache() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(ingredientSourceRepository.findById(200L)).thenReturn(Optional.of(source));
 
         ingredientSourceService.delete(1L, 200L, 10L);

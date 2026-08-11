@@ -13,6 +13,7 @@ import com.bepmo.recentproof.repository.RecentProofRepository;
 import com.bepmo.restaurant.entity.Restaurant;
 import com.bepmo.restaurant.entity.RestaurantStatus;
 import com.bepmo.restaurant.repository.RestaurantRepository;
+import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.transparencyscore.service.TransparencyScoreService;
 import com.bepmo.user.entity.User;
 import com.bepmo.user.entity.UserStatus;
@@ -33,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminService {
 
     private final RestaurantRepository restaurantRepository;
+    private final RestaurantService restaurantService;
     private final ProfileVideoRepository profileVideoRepository;
     private final IngredientSourceRepository ingredientSourceRepository;
     private final RecentProofRepository recentProofRepository;
@@ -61,14 +63,18 @@ public class AdminService {
 
     @Transactional
     public void hideVideo(Long videoId) {
-        ProfileVideo v = findVideo(videoId);
+        ProfileVideo v = findVideoForUpdate(videoId);
+        if (v.getStatus() == VideoStatus.HIDDEN) return;
+        if (v.getStatus() != VideoStatus.ACTIVE) {
+            throw new AppException(HttpStatus.CONFLICT, "Only an active video can be hidden");
+        }
         v.setStatus(VideoStatus.HIDDEN);
         transparencyScoreService.evictCache(v.getRestaurantId());
     }
 
     @Transactional
     public void unhideVideo(Long videoId) {
-        ProfileVideo v = findVideo(videoId);
+        ProfileVideo v = findVideoForUpdate(videoId);
         if (v.getStatus() != VideoStatus.HIDDEN) {
             throw new AppException(HttpStatus.CONFLICT, "Only a hidden video can be unhidden");
         }
@@ -91,14 +97,18 @@ public class AdminService {
 
     @Transactional
     public void hideIngredientSource(Long sourceId) {
-        IngredientSource s = findIngredientSource(sourceId);
+        IngredientSource s = findIngredientSourceForUpdate(sourceId);
+        if (s.getStatus() == IngredientSourceStatus.HIDDEN) return;
+        if (s.getStatus() != IngredientSourceStatus.ACTIVE) {
+            throw new AppException(HttpStatus.CONFLICT, "Only an active ingredient source can be hidden");
+        }
         s.setStatus(IngredientSourceStatus.HIDDEN);
         transparencyScoreService.evictCache(s.getRestaurantId());
     }
 
     @Transactional
     public void unhideIngredientSource(Long sourceId) {
-        IngredientSource s = findIngredientSource(sourceId);
+        IngredientSource s = findIngredientSourceForUpdate(sourceId);
         if (s.getStatus() != IngredientSourceStatus.HIDDEN) {
             throw new AppException(HttpStatus.CONFLICT, "Only a hidden ingredient source can be unhidden");
         }
@@ -110,14 +120,18 @@ public class AdminService {
 
     @Transactional
     public void hideRecentProof(Long proofId) {
-        RecentProof p = findRecentProof(proofId);
+        RecentProof p = findRecentProofForUpdate(proofId);
+        if (p.getStatus() == RecentProofStatus.HIDDEN) return;
+        if (p.getStatus() != RecentProofStatus.ACTIVE) {
+            throw new AppException(HttpStatus.CONFLICT, "Only an active recent proof can be hidden");
+        }
         p.setStatus(RecentProofStatus.HIDDEN);
         transparencyScoreService.evictCache(p.getRestaurantId());
     }
 
     @Transactional
     public void unhideRecentProof(Long proofId) {
-        RecentProof p = findRecentProof(proofId);
+        RecentProof p = findRecentProofForUpdate(proofId);
         if (p.getStatus() != RecentProofStatus.HIDDEN) {
             throw new AppException(HttpStatus.CONFLICT, "Only a hidden recent proof can be unhidden");
         }
@@ -146,6 +160,27 @@ public class AdminService {
     private Restaurant findRestaurant(Long id) {
         return restaurantRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+    }
+
+    private ProfileVideo findVideoForUpdate(Long id) {
+        Long restaurantId = profileVideoRepository.findRestaurantIdById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found"));
+        restaurantService.lockRestaurantForUpdate(restaurantId);
+        return findVideo(id);
+    }
+
+    private IngredientSource findIngredientSourceForUpdate(Long id) {
+        Long restaurantId = ingredientSourceRepository.findRestaurantIdById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Ingredient source not found"));
+        restaurantService.lockRestaurantForUpdate(restaurantId);
+        return findIngredientSource(id);
+    }
+
+    private RecentProof findRecentProofForUpdate(Long id) {
+        Long restaurantId = recentProofRepository.findRestaurantIdById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Recent proof not found"));
+        restaurantService.lockRestaurantForUpdate(restaurantId);
+        return findRecentProof(id);
     }
 
     private ProfileVideo findVideo(Long id) {

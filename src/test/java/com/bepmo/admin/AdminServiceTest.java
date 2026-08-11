@@ -15,6 +15,7 @@ import com.bepmo.recentproof.repository.RecentProofRepository;
 import com.bepmo.restaurant.entity.Restaurant;
 import com.bepmo.restaurant.entity.RestaurantStatus;
 import com.bepmo.restaurant.repository.RestaurantRepository;
+import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.transparencyscore.service.TransparencyScoreService;
 import com.bepmo.user.entity.User;
 import com.bepmo.user.entity.UserRole;
@@ -38,6 +39,7 @@ import static org.mockito.Mockito.*;
 class AdminServiceTest {
 
     @Mock RestaurantRepository restaurantRepository;
+    @Mock RestaurantService restaurantService;
     @Mock ProfileVideoRepository profileVideoRepository;
     @Mock IngredientSourceRepository ingredientSourceRepository;
     @Mock RecentProofRepository recentProofRepository;
@@ -89,6 +91,7 @@ class AdminServiceTest {
     void unhideVideo_noConflict_succeeds() {
         ProfileVideo video = ProfileVideo.builder()
                 .id(50L).restaurantId(1L).type(VideoType.KITCHEN).status(VideoStatus.HIDDEN).build();
+        when(profileVideoRepository.findRestaurantIdById(50L)).thenReturn(Optional.of(1L));
         when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video));
         when(profileVideoRepository.existsByRestaurantIdAndTypeAndStatus(1L, VideoType.KITCHEN, VideoStatus.ACTIVE))
                 .thenReturn(false);
@@ -96,6 +99,7 @@ class AdminServiceTest {
         adminService.unhideVideo(50L);
 
         assertThat(video.getStatus()).isEqualTo(VideoStatus.ACTIVE);
+        verify(restaurantService).lockRestaurantForUpdate(1L);
         verify(transparencyScoreService).evictCache(1L);
     }
 
@@ -104,6 +108,7 @@ class AdminServiceTest {
     void unhideVideo_conflictWithExistingActive_throws() {
         ProfileVideo video = ProfileVideo.builder()
                 .id(50L).restaurantId(1L).type(VideoType.KITCHEN).status(VideoStatus.HIDDEN).build();
+        when(profileVideoRepository.findRestaurantIdById(50L)).thenReturn(Optional.of(1L));
         when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video));
         when(profileVideoRepository.existsByRestaurantIdAndTypeAndStatus(1L, VideoType.KITCHEN, VideoStatus.ACTIVE))
                 .thenReturn(true); // owner đã upload video mới thay thế trong lúc bị hide
@@ -121,6 +126,7 @@ class AdminServiceTest {
     void unhideVideo_nonHidden_throwsConflict() {
         ProfileVideo video = ProfileVideo.builder()
                 .id(51L).restaurantId(1L).type(VideoType.KITCHEN).status(VideoStatus.REPLACED).build();
+        when(profileVideoRepository.findRestaurantIdById(51L)).thenReturn(Optional.of(1L));
         when(profileVideoRepository.findById(51L)).thenReturn(Optional.of(video));
 
         assertThatThrownBy(() -> adminService.unhideVideo(51L))
@@ -137,12 +143,30 @@ class AdminServiceTest {
     void hideVideo_setsHiddenAndEvicts() {
         ProfileVideo video = ProfileVideo.builder()
                 .id(50L).restaurantId(1L).type(VideoType.PREP).status(VideoStatus.ACTIVE).build();
+        when(profileVideoRepository.findRestaurantIdById(50L)).thenReturn(Optional.of(1L));
         when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video));
 
         adminService.hideVideo(50L);
 
         assertThat(video.getStatus()).isEqualTo(VideoStatus.HIDDEN);
+        verify(restaurantService).lockRestaurantForUpdate(1L);
         verify(transparencyScoreService).evictCache(1L);
+    }
+
+    @Test
+    @DisplayName("hideVideo: REPLACED không được đổi vòng sang HIDDEN")
+    void hideVideo_replaced_throwsConflict() {
+        ProfileVideo video = ProfileVideo.builder()
+                .id(52L).restaurantId(1L).type(VideoType.PREP).status(VideoStatus.REPLACED).build();
+        when(profileVideoRepository.findRestaurantIdById(52L)).thenReturn(Optional.of(1L));
+        when(profileVideoRepository.findById(52L)).thenReturn(Optional.of(video));
+
+        assertThatThrownBy(() -> adminService.hideVideo(52L))
+                .isInstanceOf(AppException.class)
+                .satisfies(ex -> assertThat(((AppException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        assertThat(video.getStatus()).isEqualTo(VideoStatus.REPLACED);
+        verify(transparencyScoreService, never()).evictCache(anyLong());
     }
 
     // ── IngredientSource ──────────────────────────────────────────────────────
@@ -152,6 +176,7 @@ class AdminServiceTest {
     void hideIngredientSource_setsHiddenAndEvicts() {
         IngredientSource source = IngredientSource.builder()
                 .id(200L).restaurantId(1L).status(IngredientSourceStatus.ACTIVE).build();
+        when(ingredientSourceRepository.findRestaurantIdById(200L)).thenReturn(Optional.of(1L));
         when(ingredientSourceRepository.findById(200L)).thenReturn(Optional.of(source));
 
         adminService.hideIngredientSource(200L);
@@ -165,6 +190,7 @@ class AdminServiceTest {
     void unhideIngredientSource_deleted_throwsConflict() {
         IngredientSource source = IngredientSource.builder()
                 .id(201L).restaurantId(1L).status(IngredientSourceStatus.DELETED).build();
+        when(ingredientSourceRepository.findRestaurantIdById(201L)).thenReturn(Optional.of(1L));
         when(ingredientSourceRepository.findById(201L)).thenReturn(Optional.of(source));
 
         assertThatThrownBy(() -> adminService.unhideIngredientSource(201L))
@@ -179,6 +205,7 @@ class AdminServiceTest {
     void unhideRecentProof_setsActiveAndEvicts() {
         RecentProof proof = RecentProof.builder()
                 .id(300L).restaurantId(1L).status(RecentProofStatus.HIDDEN).build();
+        when(recentProofRepository.findRestaurantIdById(300L)).thenReturn(Optional.of(1L));
         when(recentProofRepository.findById(300L)).thenReturn(Optional.of(proof));
 
         adminService.unhideRecentProof(300L);
@@ -192,6 +219,7 @@ class AdminServiceTest {
     void unhideRecentProof_deleted_throwsConflict() {
         RecentProof proof = RecentProof.builder()
                 .id(301L).restaurantId(1L).status(RecentProofStatus.DELETED).build();
+        when(recentProofRepository.findRestaurantIdById(301L)).thenReturn(Optional.of(1L));
         when(recentProofRepository.findById(301L)).thenReturn(Optional.of(proof));
 
         assertThatThrownBy(() -> adminService.unhideRecentProof(301L))

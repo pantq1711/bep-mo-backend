@@ -25,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -53,6 +54,7 @@ class TransparencyScoreServiceTest {
         Restaurant restaurant = Restaurant.builder()
                 .id(1L).ownerId(10L).status(RestaurantStatus.ACTIVE).build();
         lenient().when(restaurantService.requireViewableRestaurant(1L, null)).thenReturn(restaurant);
+        lenient().when(restaurantService.requireViewableRestaurantForUpdate(1L, null)).thenReturn(restaurant);
     }
 
     @Test
@@ -78,6 +80,20 @@ class TransparencyScoreServiceTest {
 
         assertThat(result.score()).isEqualTo(55);
         assertThat(result.maxScore()).isEqualTo(100);
+        verifyNoInteractions(ingredientSourceRepository, profileVideoRepository, recentProofRepository);
+        verify(restaurantService, never()).requireViewableRestaurantForUpdate(1L, null);
+    }
+
+    @Test
+    @DisplayName("getScore: cache miss ban đầu nhưng có cache sau khi lấy DB lock → dùng cache, không tính lại")
+    void getScore_cacheFilledWhileWaitingForLock_usesSecondCacheCheck() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null, "65");
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
+
+        assertThat(result.score()).isEqualTo(65);
+        verify(restaurantService).requireViewableRestaurantForUpdate(1L, null);
         verifyNoInteractions(ingredientSourceRepository, profileVideoRepository, recentProofRepository);
     }
 
@@ -122,6 +138,28 @@ class TransparencyScoreServiceTest {
         TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
 
         assertThat(result.score()).isEqualTo(100); // 15+20+20+15+10 + 20 = 100
+        verify(recentProofRepository, times(1))
+                .findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("getScore: source + KITCHEN + HYGIENE + proof 10 ngày → 60 điểm")
+    void getScore_partialDemoProfile_scoreSixty() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn(null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(true); // +15
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE)).thenReturn(List.of(
+                video(VideoType.KITCHEN), // +20
+                video(VideoType.HYGIENE) // +15
+        ));
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.of(RecentProof.builder()
+                        .uploadedAt(OffsetDateTime.now().minusDays(10)).build())); // +10
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
+
+        assertThat(result.score()).isEqualTo(60);
     }
 
     @Test
@@ -184,6 +222,25 @@ class TransparencyScoreServiceTest {
         transparencyScoreService.evictCache(1L);
 
         verify(redisTemplate).delete("score:restaurant:1");
+    }
+
+    @Test
+    @DisplayName("evictCache: trong transaction → delete ngay + đăng ký delete lại afterCommit")
+    void evictCache_insideTransaction_doubleDeletes() {
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            transparencyScoreService.evictCache(1L);
+
+            verify(redisTemplate, times(1)).delete("score:restaurant:1");
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+            verify(redisTemplate, times(2)).delete("score:restaurant:1");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
     }
 
     private ProfileVideo video(VideoType type) {

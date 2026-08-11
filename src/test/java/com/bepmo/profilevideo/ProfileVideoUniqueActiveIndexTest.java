@@ -18,6 +18,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -27,6 +31,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Integration test dùng Postgres thật (Testcontainers) thay vì H2/mock — vì mục tiêu là
@@ -57,6 +67,7 @@ class ProfileVideoUniqueActiveIndexTest {
     @Autowired private ProfileVideoRepository profileVideoRepository;
     @Autowired private RestaurantRepository restaurantRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     private Long restaurantId;
 
@@ -125,6 +136,48 @@ class ProfileVideoUniqueActiveIndexTest {
         profileVideoRepository.findById(oldVideo.getId())
                 .ifPresent(v -> assertThat(v.getStatus()).isEqualTo(VideoStatus.REPLACED));
         assertThat(newVideo.getStatus()).isEqualTo(VideoStatus.ACTIVE);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("2 replace đồng thời + lock restaurant → cả hai transaction thành công, cuối cùng chỉ 1 ACTIVE")
+    void concurrentReplaceWithRestaurantLock_serializesLastWriterWins() throws Exception {
+        profileVideoRepository.saveAndFlush(newVideo(VideoType.KITCHEN, VideoStatus.ACTIVE));
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+        try {
+            java.util.concurrent.Callable<Long> replaceTask = () -> {
+                ready.countDown();
+                if (!go.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out waiting to start concurrent replace");
+                }
+
+                return new TransactionTemplate(transactionManager).execute(status -> {
+                    restaurantRepository.findByIdForUpdate(restaurantId).orElseThrow();
+                    profileVideoRepository.replaceActive(
+                            restaurantId, VideoType.KITCHEN, VideoStatus.REPLACED, VideoStatus.ACTIVE);
+                    return profileVideoRepository.saveAndFlush(
+                            newVideo(VideoType.KITCHEN, VideoStatus.ACTIVE)).getId();
+                });
+            };
+
+            Future<Long> first = executor.submit(replaceTask);
+            Future<Long> second = executor.submit(replaceTask);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+
+            assertThat(first.get(10, TimeUnit.SECONDS)).isNotNull();
+            assertThat(second.get(10, TimeUnit.SECONDS)).isNotNull();
+
+            assertThat(profileVideoRepository.findByRestaurantIdAndStatus(restaurantId, VideoStatus.ACTIVE))
+                    .hasSize(1);
+            assertThat(profileVideoRepository.findByRestaurantIdAndStatus(restaurantId, VideoStatus.REPLACED))
+                    .hasSize(2);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
