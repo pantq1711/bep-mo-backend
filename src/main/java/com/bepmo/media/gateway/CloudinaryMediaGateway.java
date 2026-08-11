@@ -11,9 +11,12 @@ import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Single trust boundary for Cloudinary.
@@ -64,7 +67,7 @@ public class CloudinaryMediaGateway {
             paramsToSign.put("upload_preset", uploadPreset);
         }
 
-        String signature = cloudinary.apiSignRequest(paramsToSign, apiSecret);
+        String signature = signParameters(paramsToSign, apiSecret);
         String uploadUrl = "https://api.cloudinary.com/v1_1/" + cloudName + "/"
                 + resourceType.cloudinaryValue() + "/upload";
 
@@ -91,7 +94,7 @@ public class CloudinaryMediaGateway {
             throw new MediaValidationException("Cloudinary upload response is missing a valid version/signature");
         }
 
-        String expected = cloudinary.apiSignRequest(
+        String expected = signParameters(
                 ObjectUtils.asMap("public_id", expectedPublicId, "version", version),
                 apiSecret
         );
@@ -139,6 +142,30 @@ public class CloudinaryMediaGateway {
                     HttpStatus.BAD_GATEWAY,
                     "Cloudinary metadata verification is temporarily unavailable. Retry finalization."
             );
+        }
+    }
+
+    /**
+     * Cloudinary signatures are SHA digests of alphabetically sorted name=value pairs
+     * joined with '&', followed immediately by the API secret.
+     *
+     * Keep this implementation inside the Cloudinary trust boundary instead of depending on
+     * an SDK apiSignRequest overload, so signing stays compatible with the pinned Java SDK.
+     * The parameters used by this application are controlled scalar values only.
+     */
+    static String signParameters(Map<String, Object> paramsToSign, String secret) {
+        String canonical = paramsToSign.entrySet().stream()
+                .filter(entry -> entry.getValue() != null)
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + String.valueOf(entry.getValue()))
+                .collect(Collectors.joining("&"));
+
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] hash = digest.digest((canonical + secret).getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-1 is not available in this JVM", ex);
         }
     }
 
