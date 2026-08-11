@@ -1,11 +1,19 @@
 package com.bepmo.profilevideo;
 
 import com.bepmo.common.exception.AppException;
-import com.bepmo.profilevideo.dto.ProfileVideoDtos.*;
+import com.bepmo.media.entity.MediaResourceType;
+import com.bepmo.media.entity.MediaUploadPurpose;
+import com.bepmo.media.entity.MediaUploadSession;
+import com.bepmo.media.entity.MediaUploadSessionStatus;
+import com.bepmo.media.gateway.TrustedMediaMetadata;
+import com.bepmo.media.service.MediaUploadSessionService;
+import com.bepmo.media.service.MediaVerificationService;
+import com.bepmo.profilevideo.dto.ProfileVideoDtos.UploadVideoRequest;
 import com.bepmo.profilevideo.entity.ProfileVideo;
 import com.bepmo.profilevideo.entity.VideoStatus;
 import com.bepmo.profilevideo.entity.VideoType;
 import com.bepmo.profilevideo.repository.ProfileVideoRepository;
+import com.bepmo.profilevideo.service.ProfileVideoFinalizationService;
 import com.bepmo.profilevideo.service.ProfileVideoService;
 import com.bepmo.restaurant.entity.Restaurant;
 import com.bepmo.restaurant.entity.RestaurantStatus;
@@ -21,7 +29,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,55 +44,79 @@ class ProfileVideoServiceTest {
     @Mock ProfileVideoRepository profileVideoRepository;
     @Mock RestaurantService restaurantService;
     @Mock TransparencyScoreService transparencyScoreService;
+    @Mock MediaUploadSessionService mediaUploadSessionService;
+    @Mock MediaVerificationService mediaVerificationService;
+    @Mock ProfileVideoFinalizationService finalizationService;
 
     @InjectMocks ProfileVideoService profileVideoService;
 
     private Restaurant restaurant;
     private ProfileVideo video;
+    private MediaUploadSession session;
+    private TrustedMediaMetadata metadata;
+    private UUID sessionId;
 
     @BeforeEach
     void setUp() {
+        sessionId = UUID.randomUUID();
         restaurant = Restaurant.builder().id(1L).ownerId(10L).status(RestaurantStatus.ACTIVE).build();
         video = ProfileVideo.builder()
                 .id(50L).restaurantId(1L).type(VideoType.KITCHEN)
                 .cloudinaryUrl("https://cdn/x.mp4").cloudinaryPublicId("pub-1")
                 .durationSeconds(20).fileSizeBytes(1000L)
+                .mediaUploadSessionId(sessionId)
                 .status(VideoStatus.ACTIVE)
                 .build();
+        session = MediaUploadSession.builder()
+                .id(sessionId).ownerId(10L).restaurantId(1L)
+                .purpose(MediaUploadPurpose.PROFILE_VIDEO)
+                .profileVideoType(VideoType.KITCHEN)
+                .resourceType(MediaResourceType.VIDEO)
+                .expectedPublicId("bep-mo/test")
+                .status(MediaUploadSessionStatus.ISSUED)
+                .expiresAt(OffsetDateTime.now().plusMinutes(5))
+                .build();
+        metadata = new TrustedMediaMetadata(
+                "bep-mo/test", 7L, MediaResourceType.VIDEO, "upload", "mp4",
+                1000L, 1280, 720, 20.0, "https://cdn/new.mp4"
+        );
     }
 
     @Test
-    @DisplayName("upload: gọi replaceActive() TRƯỚC khi save video mới cùng type")
-    void upload_callsReplaceActiveBeforeSave() {
-        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
-        when(profileVideoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+    @DisplayName("upload: Cloudinary verification xảy ra trước short DB finalization")
+    void upload_verifiesBeforeFinalization() {
+        when(mediaUploadSessionService.requireAuthorizedForPublish(
+                sessionId, 10L, 1L, MediaUploadPurpose.PROFILE_VIDEO)).thenReturn(session);
+        when(profileVideoRepository.findByMediaUploadSessionId(sessionId)).thenReturn(Optional.empty());
+        when(mediaVerificationService.verify(session, 7L, "sig")).thenReturn(metadata);
+        when(finalizationService.finalizeUpload(1L, 10L, sessionId, metadata)).thenReturn(video);
 
-        profileVideoService.upload(1L, 10L, new UploadVideoRequest(
-                VideoType.KITCHEN, "https://cdn/new.mp4", "pub-2", null, 15, 2000L));
+        profileVideoService.upload(1L, 10L, new UploadVideoRequest(sessionId, 7L, "sig"));
 
-        InOrder order = inOrder(restaurantService, profileVideoRepository);
-        order.verify(restaurantService).requireOwnedRestaurantForUpdate(1L, 10L);
-        order.verify(profileVideoRepository).replaceActive(1L, VideoType.KITCHEN, VideoStatus.REPLACED, VideoStatus.ACTIVE);
-        order.verify(profileVideoRepository).save(any(ProfileVideo.class));
+        InOrder order = inOrder(mediaVerificationService, finalizationService);
+        order.verify(mediaVerificationService).verify(session, 7L, "sig");
+        order.verify(finalizationService).finalizeUpload(1L, 10L, sessionId, metadata);
     }
 
     @Test
-    @DisplayName("upload: thành công → evict transparency score cache")
-    void upload_evictsScoreCache() {
-        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
-        when(profileVideoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+    @DisplayName("upload retry: CONSUMED session trả record cũ và bypass Cloudinary verification")
+    void upload_consumedRetryBypassesCloudinary() {
+        session.setStatus(MediaUploadSessionStatus.CONSUMED);
+        when(mediaUploadSessionService.requireAuthorizedForPublish(
+                sessionId, 10L, 1L, MediaUploadPurpose.PROFILE_VIDEO)).thenReturn(session);
+        when(profileVideoRepository.findByMediaUploadSessionId(sessionId)).thenReturn(Optional.of(video));
 
-        profileVideoService.upload(1L, 10L, new UploadVideoRequest(
-                VideoType.HYGIENE, "https://cdn/new.mp4", "pub-2", null, 15, 2000L));
+        var result = profileVideoService.upload(1L, 10L, new UploadVideoRequest(sessionId, 7L, "sig"));
 
-        verify(transparencyScoreService).evictCache(1L);
+        assertThat(result.id()).isEqualTo(50L);
+        verifyNoInteractions(mediaVerificationService, finalizationService);
     }
 
     @Test
     @DisplayName("hide: video thuộc quán khác (path variable sai) → 404")
     void hide_videoBelongsToDifferentRestaurant() {
         when(restaurantService.requireOwnedRestaurantForUpdate(2L, 10L)).thenReturn(restaurant);
-        when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video)); // video.restaurantId = 1
+        when(profileVideoRepository.findById(50L)).thenReturn(Optional.of(video));
 
         assertThatThrownBy(() -> profileVideoService.hide(2L, 50L, 10L))
                 .isInstanceOf(AppException.class)

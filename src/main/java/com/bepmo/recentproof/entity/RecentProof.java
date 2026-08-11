@@ -6,6 +6,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "recent_proofs")
@@ -36,6 +37,9 @@ public class RecentProof {
 
     @Column(name = "cloudinary_public_id", nullable = false, length = 255)
     private String cloudinaryPublicId;
+
+    @Column(name = "media_upload_session_id")
+    private UUID mediaUploadSessionId;
 
     @Column(columnDefinition = "TEXT")
     private String note;

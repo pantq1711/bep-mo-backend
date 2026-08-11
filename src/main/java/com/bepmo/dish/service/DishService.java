@@ -28,7 +28,7 @@ public class DishService {
                 .name(request.name())
                 .description(request.description())
                 .price(request.price())
-                .category(request.category())
+                .category(normalizeOptionalCategory(request.category()))
                 .isAvailable(true)
                 .build();
 
@@ -44,7 +44,7 @@ public class DishService {
         if (request.name() != null) dish.setName(request.name());
         if (request.description() != null) dish.setDescription(request.description());
         if (request.price() != null) dish.setPrice(request.price());
-        if (request.category() != null) dish.setCategory(request.category());
+        if (request.category() != null) dish.setCategory(normalizeOptionalCategory(request.category()));
         if (request.isAvailable() != null) dish.setIsAvailable(request.isAvailable());
 
         return toResponse(dish);
@@ -84,6 +84,12 @@ public class DishService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private String normalizeOptionalCategory(String value) {
+        if (value == null) return null;
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
 
     private Dish requireDishInRestaurant(Long dishId, Long restaurantId) {
         Dish dish = dishRepository.findById(dishId)

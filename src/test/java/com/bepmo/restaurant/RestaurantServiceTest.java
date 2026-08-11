@@ -53,9 +53,10 @@ class RestaurantServiceTest {
         when(restaurantRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         RestaurantProfile result = restaurantService.create(10L,
-                new CreateRestaurantRequest("Quan Ngon", "mo ta", "123 Le Loi", "Vietnamese"));
+                new CreateRestaurantRequest("Quan Ngon", "mo ta", "123 Le Loi", "  Vietnamese  "));
 
         assertThat(result.name()).isEqualTo("Quan Ngon");
+        assertThat(result.category()).isEqualTo("Vietnamese");
         verify(restaurantRepository).save(any(Restaurant.class));
     }
 
@@ -230,6 +231,20 @@ class RestaurantServiceTest {
         assertThat(result.content()).hasSize(1);
         verify(restaurantRepository).searchPublic(
                 eq(RestaurantStatus.ACTIVE), eq("pho"), eq("phở"), any());
+    }
+
+
+    @Test
+    @DisplayName("list: escape LIKE wildcard để q được hiểu là literal text")
+    void list_escapesLikeWildcards() {
+        when(restaurantRepository.searchPublic(
+                eq(RestaurantStatus.ACTIVE), eq("50!%!_off!!"), eq("phở"), any()))
+                .thenReturn(new PageImpl<>(List.of(restaurant)));
+
+        restaurantService.list(0, 12, "  50%_OFF!  ", "  Phở  ");
+
+        verify(restaurantRepository).searchPublic(
+                eq(RestaurantStatus.ACTIVE), eq("50!%!_off!!"), eq("phở"), any());
     }
 
     @Test

@@ -13,6 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -30,19 +32,20 @@ public class AdminBootstrapRunner implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (userRepository.existsByEmail(adminEmail)) {
+        String normalizedAdminEmail = adminEmail.trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmailIgnoreCase(normalizedAdminEmail)) {
             log.info("Admin account already exists, skipping bootstrap");
             return;
         }
 
         User admin = User.builder()
-                .email(adminEmail)
+                .email(normalizedAdminEmail)
                 .passwordHash(passwordEncoder.encode(adminPassword))
                 .role(UserRole.ADMIN)
                 .status(UserStatus.ACTIVE)
                 .build();
 
         userRepository.save(admin);
-        log.info("Admin account created: {}", adminEmail);
+        log.info("Admin account created: {}", normalizedAdminEmail);
     }
 }

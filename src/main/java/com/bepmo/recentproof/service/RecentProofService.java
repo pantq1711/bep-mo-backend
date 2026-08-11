@@ -1,9 +1,12 @@
 package com.bepmo.recentproof.service;
 
 import com.bepmo.common.exception.AppException;
+import com.bepmo.media.entity.MediaUploadPurpose;
+import com.bepmo.media.entity.MediaUploadSessionStatus;
+import com.bepmo.media.gateway.TrustedMediaMetadata;
+import com.bepmo.media.service.MediaUploadSessionService;
+import com.bepmo.media.service.MediaVerificationService;
 import com.bepmo.recentproof.dto.RecentProofDtos.*;
-import com.bepmo.recentproof.entity.MediaKind;
-import com.bepmo.recentproof.entity.ProofType;
 import com.bepmo.recentproof.entity.RecentProof;
 import com.bepmo.recentproof.entity.RecentProofStatus;
 import com.bepmo.recentproof.repository.RecentProofRepository;
@@ -23,26 +26,30 @@ public class RecentProofService {
     private final RecentProofRepository recentProofRepository;
     private final RestaurantService restaurantService;
     private final TransparencyScoreService transparencyScoreService;
+    private final MediaUploadSessionService mediaUploadSessionService;
+    private final MediaVerificationService mediaVerificationService;
+    private final RecentProofFinalizationService finalizationService;
 
-    @Transactional
+    /** Cloudinary external I/O is deliberately outside the finalization DB transaction. */
     public RecentProofResponse create(Long restaurantId, Long ownerId, CreateRecentProofRequest request) {
-        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
+        var session = mediaUploadSessionService.requireAuthorizedForPublish(
+                request.uploadSessionId(), ownerId, restaurantId, MediaUploadPurpose.RECENT_PROOF
+        );
 
-        RecentProof proof = RecentProof.builder()
-                .restaurantId(restaurantId)
-                .proofType(request.proofType())
-                .mediaKind(deriveMediaKind(request.proofType()))
-                .mediaUrl(request.mediaUrl())
-                .cloudinaryPublicId(request.cloudinaryPublicId())
-                .note(request.note())
-                .status(RecentProofStatus.ACTIVE)
-                .build();
+        var existing = recentProofRepository.findByMediaUploadSessionId(request.uploadSessionId());
+        if (existing.isPresent()) {
+            return toResponse(existing.get());
+        }
+        if (session.getStatus() == MediaUploadSessionStatus.CONSUMED) {
+            throw new AppException(HttpStatus.CONFLICT, "Upload session is consumed but its proof record is missing");
+        }
 
-        recentProofRepository.save(proof);
-
-        // Proof mới nhất quyết định Freshness score — evict cache ngay
-        transparencyScoreService.evictCache(restaurantId);
-
+        TrustedMediaMetadata metadata = mediaVerificationService.verify(
+                session, request.version(), request.responseSignature()
+        );
+        RecentProof proof = finalizationService.finalizeUpload(
+                restaurantId, ownerId, request.uploadSessionId(), metadata, request.note()
+        );
         return toResponse(proof);
     }
 
@@ -54,7 +61,6 @@ public class RecentProofService {
         transparencyScoreService.evictCache(restaurantId);
     }
 
-    // Public profile chỉ hiện 3 proof gần nhất — theo đúng scope MVP (không có timeline lịch sử)
     @Transactional(readOnly = true)
     public List<RecentProofResponse> listRecentActive(Long restaurantId, Long currentUserId) {
         restaurantService.requireViewableRestaurant(restaurantId, currentUserId);
@@ -63,22 +69,12 @@ public class RecentProofService {
                 .stream().map(this::toResponse).toList();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    // Compatibility rule mục 5: RECEIVING_VIDEO -> VIDEO, còn lại -> IMAGE.
-    // Áp dụng ở application layer song song với CHECK constraint ở DB (double validation).
-    private MediaKind deriveMediaKind(ProofType type) {
-        return type == ProofType.RECEIVING_VIDEO ? MediaKind.VIDEO : MediaKind.IMAGE;
-    }
-
     private RecentProof requireProofInRestaurant(Long proofId, Long restaurantId) {
         RecentProof proof = recentProofRepository.findById(proofId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Recent proof not found"));
-
         if (!proof.getRestaurantId().equals(restaurantId)) {
             throw new AppException(HttpStatus.NOT_FOUND, "Recent proof not found in this restaurant");
         }
-
         return proof;
     }
 

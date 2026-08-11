@@ -69,7 +69,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("register: success → returns token pair")
     void register_success() {
-        when(userRepository.existsByEmail("owner@bepmo.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("owner@bepmo.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("$2a$hash");
         when(userRepository.save(any())).thenReturn(activeUser);
 
@@ -82,10 +82,24 @@ class AuthServiceTest {
         verify(userRepository).save(any(User.class));
     }
 
+
+    @Test
+    @DisplayName("register: trim + lowercase email before duplicate check and save")
+    void register_normalizesEmail() {
+        when(userRepository.existsByEmailIgnoreCase("owner@bepmo.com")).thenReturn(false);
+        when(passwordEncoder.encode("password123")).thenReturn("$2a$hash");
+        when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        authService.register(new RegisterRequest("  OWNER@BEPMO.COM  ", "password123"));
+
+        verify(userRepository).existsByEmailIgnoreCase("owner@bepmo.com");
+        verify(userRepository).save(argThat(user -> "owner@bepmo.com".equals(user.getEmail())));
+    }
+
     @Test
     @DisplayName("register: duplicate email → 409 CONFLICT")
     void register_duplicateEmail() {
-        when(userRepository.existsByEmail("owner@bepmo.com")).thenReturn(true);
+        when(userRepository.existsByEmailIgnoreCase("owner@bepmo.com")).thenReturn(true);
 
         assertThatThrownBy(() ->
             authService.register(new RegisterRequest("owner@bepmo.com", "password123")))
@@ -96,10 +110,22 @@ class AuthServiceTest {
 
     // ── Login ─────────────────────────────────────────────────────────────────
 
+
+    @Test
+    @DisplayName("login: trim + lowercase email before lookup")
+    void login_normalizesEmail() {
+        when(userRepository.findByEmailIgnoreCase("owner@bepmo.com")).thenReturn(Optional.of(activeUser));
+        when(passwordEncoder.matches("password123", activeUser.getPasswordHash())).thenReturn(true);
+
+        authService.login(new LoginRequest("  OWNER@BEPMO.COM  ", "password123"));
+
+        verify(userRepository).findByEmailIgnoreCase("owner@bepmo.com");
+    }
+
     @Test
     @DisplayName("login: wrong password → 401 UNAUTHORIZED")
     void login_wrongPassword() {
-        when(userRepository.findByEmail("owner@bepmo.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailIgnoreCase("owner@bepmo.com")).thenReturn(Optional.of(activeUser));
         when(passwordEncoder.matches("wrong", activeUser.getPasswordHash())).thenReturn(false);
 
         assertThatThrownBy(() ->
@@ -116,7 +142,7 @@ class AuthServiceTest {
                 .id(2L).email("d@bepmo.com").passwordHash("hash")
                 .role(UserRole.RESTAURANT_OWNER).status(UserStatus.DISABLED).build();
 
-        when(userRepository.findByEmail("d@bepmo.com")).thenReturn(Optional.of(disabled));
+        when(userRepository.findByEmailIgnoreCase("d@bepmo.com")).thenReturn(Optional.of(disabled));
         when(passwordEncoder.matches("pass", "hash")).thenReturn(true);
 
         assertThatThrownBy(() ->

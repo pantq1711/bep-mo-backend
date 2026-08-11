@@ -40,7 +40,7 @@ public class RestaurantService {
                 .name(request.name())
                 .description(request.description())
                 .address(request.address())
-                .category(request.category())
+                .category(normalizeOptionalCategory(request.category()))
                 .status(RestaurantStatus.ACTIVE)
                 .build();
 
@@ -58,7 +58,7 @@ public class RestaurantService {
         if (request.name() != null) restaurant.setName(request.name());
         if (request.description() != null) restaurant.setDescription(request.description());
         if (request.address() != null) restaurant.setAddress(request.address());
-        if (request.category() != null) restaurant.setCategory(request.category());
+        if (request.category() != null) restaurant.setCategory(normalizeOptionalCategory(request.category()));
 
         // Không cần gọi save() tường minh — entity đang managed trong transaction hiện tại,
         // Hibernate tự flush thay đổi (dirty checking) khi transaction commit.
@@ -88,8 +88,8 @@ public class RestaurantService {
     public PagedResponse<RestaurantSummary> list(int page, int size, String query, String category) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        String normalizedQuery = normalizeSearchText(query);
-        String normalizedCategory = normalizeSearchText(category);
+        String normalizedQuery = normalizeSearchQuery(query);
+        String normalizedCategory = normalizeCategoryFilter(category);
 
         Pageable pageable = PageRequest.of(
                 safePage,
@@ -184,9 +184,24 @@ public class RestaurantService {
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
     }
 
-    private String normalizeSearchText(String value) {
+    private String normalizeSearchQuery(String value) {
+        if (value == null) return "";
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized
+                .replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
+    }
+
+    private String normalizeCategoryFilter(String value) {
         if (value == null) return "";
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeOptionalCategory(String value) {
+        if (value == null) return null;
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     // ── Mapping ───────────────────────────────────────────────────────────────

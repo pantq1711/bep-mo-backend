@@ -6,6 +6,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "profile_videos")
@@ -41,6 +42,9 @@ public class ProfileVideo {
 
     @Column(name = "file_size_bytes", nullable = false)
     private Long fileSizeBytes;
+
+    @Column(name = "media_upload_session_id")
+    private UUID mediaUploadSessionId;
 
     @Column(nullable = false, length = 30)
     @Enumerated(EnumType.STRING)

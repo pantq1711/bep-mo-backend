@@ -24,13 +24,13 @@ public interface RestaurantRepository extends JpaRepository<Restaurant, Long> {
             WHERE r.status = :status
               AND (
                     :query = ''
-                    OR LOWER(r.name) LIKE CONCAT('%', :query, '%')
-                    OR LOWER(r.address) LIKE CONCAT('%', :query, '%')
-                    OR LOWER(COALESCE(r.category, '')) LIKE CONCAT('%', :query, '%')
+                    OR LOWER(r.name) LIKE CONCAT('%', :query, '%') ESCAPE '!'
+                    OR LOWER(r.address) LIKE CONCAT('%', :query, '%') ESCAPE '!'
+                    OR LOWER(COALESCE(r.category, '')) LIKE CONCAT('%', :query, '%') ESCAPE '!'
                   )
               AND (
                     :category = ''
-                    OR LOWER(r.category) = :category
+                    OR LOWER(TRIM(r.category)) = :category
                   )
             """)
     Page<Restaurant> searchPublic(

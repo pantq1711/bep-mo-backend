@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface ProfileVideoRepository extends JpaRepository<ProfileVideo, Long> {
 
@@ -18,6 +19,8 @@ public interface ProfileVideoRepository extends JpaRepository<ProfileVideo, Long
     Optional<ProfileVideo> findByRestaurantIdAndTypeAndStatus(Long restaurantId, VideoType type, VideoStatus status);
 
     List<ProfileVideo> findByRestaurantIdAndStatus(Long restaurantId, VideoStatus status);
+
+    Optional<ProfileVideo> findByMediaUploadSessionId(UUID mediaUploadSessionId);
 
     // Used when replacing a video: mark old ACTIVE as REPLACED
     // Bind cả oldStatus/newStatus qua enum param — không dùng string literal trong JPQL,

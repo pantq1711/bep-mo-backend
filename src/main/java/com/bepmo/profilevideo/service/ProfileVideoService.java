@@ -1,6 +1,11 @@
 package com.bepmo.profilevideo.service;
 
 import com.bepmo.common.exception.AppException;
+import com.bepmo.media.entity.MediaUploadPurpose;
+import com.bepmo.media.entity.MediaUploadSessionStatus;
+import com.bepmo.media.gateway.TrustedMediaMetadata;
+import com.bepmo.media.service.MediaUploadSessionService;
+import com.bepmo.media.service.MediaVerificationService;
 import com.bepmo.profilevideo.dto.ProfileVideoDtos.*;
 import com.bepmo.profilevideo.entity.ProfileVideo;
 import com.bepmo.profilevideo.entity.VideoStatus;
@@ -21,32 +26,35 @@ public class ProfileVideoService {
     private final ProfileVideoRepository profileVideoRepository;
     private final RestaurantService restaurantService;
     private final TransparencyScoreService transparencyScoreService;
+    private final MediaUploadSessionService mediaUploadSessionService;
+    private final MediaVerificationService mediaVerificationService;
+    private final ProfileVideoFinalizationService finalizationService;
 
-    @Transactional
+    /**
+     * Orchestration is intentionally NOT transactional. Cloudinary response verification and
+     * Admin API lookup happen here before ProfileVideoFinalizationService opens the short DB tx.
+     */
     public ProfileVideoResponse upload(Long restaurantId, Long ownerId, UploadVideoRequest request) {
-        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
+        var session = mediaUploadSessionService.requireAuthorizedForPublish(
+                request.uploadSessionId(), ownerId, restaurantId, MediaUploadPurpose.PROFILE_VIDEO
+        );
 
-        // Demote video ACTIVE cùng type (nếu có) thành REPLACED trước khi insert video mới.
-        // Bắt buộc làm bước này trước insert, không phải sau — nếu không sẽ đụng
-        // partial unique index uq_profile_videos_one_active_per_type ngay khi insert.
-        profileVideoRepository.replaceActive(restaurantId, request.type(), VideoStatus.REPLACED, VideoStatus.ACTIVE);
+        // Lost HTTP response / ordinary retry: return the already committed row without another
+        // Cloudinary Admin API call. The unique DB column is also the idempotency key.
+        var existing = profileVideoRepository.findByMediaUploadSessionId(request.uploadSessionId());
+        if (existing.isPresent()) {
+            return toResponse(existing.get());
+        }
+        if (session.getStatus() == MediaUploadSessionStatus.CONSUMED) {
+            throw new AppException(HttpStatus.CONFLICT, "Upload session is consumed but its video record is missing");
+        }
 
-        ProfileVideo video = ProfileVideo.builder()
-                .restaurantId(restaurantId)
-                .type(request.type())
-                .cloudinaryUrl(request.cloudinaryUrl())
-                .cloudinaryPublicId(request.cloudinaryPublicId())
-                .thumbnailUrl(request.thumbnailUrl())
-                .durationSeconds(request.durationSeconds())
-                .fileSizeBytes(request.fileSizeBytes())
-                .status(VideoStatus.ACTIVE)
-                .build();
-
-        profileVideoRepository.save(video);
-
-        // Video ACTIVE ảnh hưởng Completeness score — evict cache để lần đọc sau tính lại
-        transparencyScoreService.evictCache(restaurantId);
-
+        TrustedMediaMetadata metadata = mediaVerificationService.verify(
+                session, request.version(), request.responseSignature()
+        );
+        ProfileVideo video = finalizationService.finalizeUpload(
+                restaurantId, ownerId, request.uploadSessionId(), metadata
+        );
         return toResponse(video);
     }
 
@@ -67,9 +75,7 @@ public class ProfileVideoService {
         restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         ProfileVideo video = requireVideoInRestaurant(videoId, restaurantId);
         if (video.getStatus() == VideoStatus.DELETED) return;
-        // Soft delete — giữ record để audit, không xoá vật lý.
-        // Cloudinary file gốc KHÔNG bị xoá ở bước này (backend không giữ Cloudinary API secret
-        // cho write access trong luồng client-upload hiện tại) — chấp nhận là known limitation của MVP.
+        // Soft delete only. Cloudinary destroy/orphan reconciliation is outside the demo critical path.
         video.setStatus(VideoStatus.DELETED);
         transparencyScoreService.evictCache(restaurantId);
     }
@@ -81,16 +87,12 @@ public class ProfileVideoService {
                 .stream().map(this::toResponse).toList();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
     private ProfileVideo requireVideoInRestaurant(Long videoId, Long restaurantId) {
         ProfileVideo video = profileVideoRepository.findById(videoId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Video not found"));
-
         if (!video.getRestaurantId().equals(restaurantId)) {
             throw new AppException(HttpStatus.NOT_FOUND, "Video not found in this restaurant");
         }
-
         return video;
     }
 

@@ -14,14 +14,14 @@ public class DishDtos {
         @NotBlank @Size(max = 150) String name,
         String description,
         @NotNull @DecimalMin("0.0") BigDecimal price,
-        String category
+        @Size(max = 80) String category
     ) {}
 
     public record UpdateDishRequest(
         @Size(max = 150) String name,
         String description,
         @DecimalMin("0.0") BigDecimal price,
-        String category,
+        @Size(max = 80) String category,
         Boolean isAvailable
     ) {}
 

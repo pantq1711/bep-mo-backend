@@ -22,7 +22,7 @@ public class ProfileVideoController {
     private final ProfileVideoService profileVideoService;
 
     @PostMapping
-    @Operation(summary = "Upload video (owner only) — client đã upload lên Cloudinary trước, đây chỉ record metadata")
+    @Operation(summary = "Finalize signed Cloudinary video upload (owner only)")
     public ResponseEntity<ProfileVideoResponse> upload(
             @AuthenticationPrincipal Long currentUserId,
             @PathVariable Long restaurantId,

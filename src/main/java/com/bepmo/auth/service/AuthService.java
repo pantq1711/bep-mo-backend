@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -41,12 +42,13 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        String email = normalizeEmail(request.email());
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new AppException(HttpStatus.CONFLICT, "Email already in use");
         }
 
         User user = User.builder()
-                .email(request.email())
+                .email(email)
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .role(UserRole.RESTAURANT_OWNER)
                 .status(UserStatus.ACTIVE)
@@ -62,7 +64,8 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email())
+        String email = normalizeEmail(request.email());
+        User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -146,6 +149,10 @@ public class AuthService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
 
     private AuthResponse issueTokenPair(User user) {
         String accessToken = jwtUtil.generateAccessToken(

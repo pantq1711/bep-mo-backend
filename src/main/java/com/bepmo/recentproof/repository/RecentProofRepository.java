@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface RecentProofRepository extends JpaRepository<RecentProof, Long> {
 
@@ -20,6 +21,8 @@ public interface RecentProofRepository extends JpaRepository<RecentProof, Long> 
             Long restaurantId, RecentProofStatus status);
 
     List<RecentProof> findByRestaurantId(Long restaurantId);
+
+    Optional<RecentProof> findByMediaUploadSessionId(UUID mediaUploadSessionId);
 
     @Query("SELECT p.restaurantId FROM RecentProof p WHERE p.id = :id")
     Optional<Long> findRestaurantIdById(@Param("id") Long id);

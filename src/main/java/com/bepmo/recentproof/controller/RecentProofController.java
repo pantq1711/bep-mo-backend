@@ -22,7 +22,7 @@ public class RecentProofController {
     private final RecentProofService recentProofService;
 
     @PostMapping
-    @Operation(summary = "Upload recent proof (owner only)")
+    @Operation(summary = "Finalize signed Cloudinary recent-proof upload (owner only)")
     public ResponseEntity<RecentProofResponse> create(
             @AuthenticationPrincipal Long currentUserId,
             @PathVariable Long restaurantId,

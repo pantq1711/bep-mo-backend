@@ -3,6 +3,7 @@ package com.bepmo.config;
 import com.bepmo.security.filter.JwtAuthFilter;
 import com.bepmo.security.filter.JwtAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -29,6 +30,9 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+
+    @Value("${app.cors.allowed-origins:http://localhost:5173}")
+    private List<String> allowedOrigins;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -63,6 +67,10 @@ public class SecurityConfig {
                         // Admin only
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 
+                        // Signed media capability is owner-only.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/media/**")
+                                .hasRole("RESTAURANT_OWNER")
+
                         // Owner API — declare before public GET wildcard because Spring Security
                         // applies the first matching rule. Keeping writes OWNER-only prevents an
                         // authenticated ADMIN account from accidentally using owner workflows.
@@ -95,14 +103,21 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    // Frontend dev server (Vite) chạy ở origin khác (port 5173) so với backend
-    // (port 8080) — trình duyệt chặn request cross-origin nếu thiếu header CORS,
-    // dù Swagger UI (cùng origin với API) vẫn truy cập bình thường. Chỉ whitelist
-    // origin dev, KHÔNG dùng "*" vì allowCredentials(true) yêu cầu origin cụ thể.
+    // Frontend dev server (Vite) chạy khác origin với backend. Danh sách origin
+    // được cấu hình qua app.cors.allowed-origins / APP_CORS_ALLOWED_ORIGINS thay vì
+    // hard-code trong security config. Không dùng "*" khi allowCredentials(true).
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        List<String> origins = allowedOrigins.stream()
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toList();
+        if (origins.contains("*")) {
+            throw new IllegalStateException("CORS wildcard '*' is not allowed when credentials are enabled");
+        }
+
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setAllowCredentials(true);

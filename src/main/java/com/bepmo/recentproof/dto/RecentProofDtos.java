@@ -5,20 +5,23 @@ import com.bepmo.recentproof.entity.ProofType;
 import com.bepmo.recentproof.entity.RecentProofStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 public class RecentProofDtos {
 
-    // mediaKind KHÔNG có trong request — suy ra từ proofType ở Service layer theo
-    // rule compatibility (RECEIVING_VIDEO -> VIDEO, còn lại -> IMAGE), tránh client
-    // gửi mediaKind sai lệch với proofType.
+    /**
+     * proofType/mediaKind/public_id/URL are not client claims anymore. proofType is bound to
+     * the upload session and media metadata is verified server-side against Cloudinary.
+     */
     public record CreateRecentProofRequest(
-        @NotNull ProofType proofType,
-        @NotBlank String mediaUrl,
-        @NotBlank String cloudinaryPublicId,
-        @Size(max = 500) String note
+            @NotNull UUID uploadSessionId,
+            @NotNull @Positive Long version,
+            @NotBlank String responseSignature,
+            @Size(max = 500) String note
     ) {}
 
     public record RecentProofResponse(

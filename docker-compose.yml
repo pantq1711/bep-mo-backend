@@ -47,6 +47,11 @@ services:
       APP_JWT_SECRET: ${APP_JWT_SECRET:-bepmo-local-dev-secret-key-change-me-in-production-32bytes-min}
       APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL:-admin@bepmo.local}
       APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-ChangeMe123!}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_UPLOAD_PRESET: ${CLOUDINARY_UPLOAD_PRESET:-}
+      MEDIA_UPLOAD_SESSION_TTL_SECONDS: ${MEDIA_UPLOAD_SESSION_TTL_SECONDS:-600}
     depends_on:
       postgres:
         condition: service_healthy

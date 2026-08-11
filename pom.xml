@@ -14,6 +14,7 @@
     <properties>
         <java.version>17</java.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <cloudinary.version>2.3.2</cloudinary.version>
         <!-- Ghi đè bản Lombok mà spring-boot-starter-parent 3.3.0 pin sẵn (bản cũ,
              chưa hỗ trợ JDK 23) — cần bản >=1.18.40 mới build được nếu máy chạy
              Maven bằng JDK 23. Không ảnh hưởng gì nếu build bằng JDK 17/21 (LTS) —
@@ -89,6 +90,12 @@
             <artifactId>jjwt-jackson</artifactId>
             <version>${jjwt.version}</version>
             <scope>runtime</scope>
+        </dependency>
+        <!-- Cloudinary backend SDK: request signing + Admin API resource verification -->
+        <dependency>
+            <groupId>com.cloudinary</groupId>
+            <artifactId>cloudinary-http5</artifactId>
+            <version>${cloudinary.version}</version>
         </dependency>
         <!--  Lombok  -->
         <dependency>

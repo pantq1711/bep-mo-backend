@@ -13,14 +13,14 @@ public class RestaurantDtos {
         @NotBlank @Size(max = 150) String name,
         String description,
         @NotBlank @Size(max = 255) String address,
-        String category
+        @Size(max = 80) String category
     ) {}
 
     public record UpdateRestaurantRequest(
         @Size(max = 150) String name,
         String description,
         @Size(max = 255) String address,
-        String category
+        @Size(max = 80) String category
     ) {}
 
     // ── Response — summary for list endpoint ─────────────────────────────────
