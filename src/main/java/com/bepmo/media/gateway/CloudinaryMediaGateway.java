@@ -4,19 +4,16 @@ import com.bepmo.common.exception.AppException;
 import com.bepmo.media.entity.MediaResourceType;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Single trust boundary for Cloudinary.
@@ -26,6 +23,8 @@ import java.util.stream.Collectors;
  */
 @Component
 public class CloudinaryMediaGateway {
+
+    private static final Logger log = LoggerFactory.getLogger(CloudinaryMediaGateway.class);
 
     private final String cloudName;
     private final String apiKey;
@@ -67,7 +66,12 @@ public class CloudinaryMediaGateway {
             paramsToSign.put("upload_preset", uploadPreset);
         }
 
-        String signature = signParameters(paramsToSign, apiSecret);
+        // SDK signing is local-only: it does not call Cloudinary or extend the DB transaction.
+        cloudinary.signRequest(
+                paramsToSign,
+                ObjectUtils.asMap("api_key", apiKey, "api_secret", apiSecret)
+        );
+        String signature = stringValue(paramsToSign.get("signature"));
         String uploadUrl = "https://api.cloudinary.com/v1_1/" + cloudName + "/"
                 + resourceType.cloudinaryValue() + "/upload";
 
@@ -94,13 +98,10 @@ public class CloudinaryMediaGateway {
             throw new MediaValidationException("Cloudinary upload response is missing a valid version/signature");
         }
 
-        String expected = signParameters(
-                ObjectUtils.asMap("public_id", expectedPublicId, "version", version),
-                apiSecret
-        );
-        boolean matches = MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8),
-                responseSignature.trim().getBytes(StandardCharsets.UTF_8)
+        boolean matches = cloudinary.verifyApiResponseSignature(
+                expectedPublicId,
+                Long.toString(version),
+                responseSignature.trim()
         );
         if (!matches) {
             throw new MediaValidationException("Cloudinary upload response signature is invalid");
@@ -116,24 +117,12 @@ public class CloudinaryMediaGateway {
         try {
             Map<?, ?> result = cloudinary.api().resource(
                     publicId,
-                    ObjectUtils.asMap(
-                            "resource_type", resourceType.cloudinaryValue(),
-                            "type", "upload"
-                    )
+                    metadataResourceOptions(resourceType)
             );
 
-            return new TrustedMediaMetadata(
-                    stringValue(result.get("public_id")),
-                    longValue(result.get("version")),
-                    parseResourceType(result.get("resource_type")),
-                    stringValue(result.get("type")),
-                    stringValue(result.get("format")),
-                    longValue(result.get("bytes")),
-                    integerValue(result.get("width")),
-                    integerValue(result.get("height")),
-                    doubleValue(result.get("duration")),
-                    stringValue(result.get("secure_url"))
-            );
+            TrustedMediaMetadata metadata = parseTrustedMetadata(result);
+            logTrustedMetadataDiagnostic(publicId, resourceType, result, metadata);
+            return metadata;
         } catch (MediaValidationException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -145,28 +134,104 @@ public class CloudinaryMediaGateway {
         }
     }
 
-    /**
-     * Cloudinary signatures are SHA digests of alphabetically sorted name=value pairs
-     * joined with '&', followed immediately by the API secret.
-     *
-     * Keep this implementation inside the Cloudinary trust boundary instead of depending on
-     * an SDK apiSignRequest overload, so signing stays compatible with the pinned Java SDK.
-     * The parameters used by this application are controlled scalar values only.
-     */
-    static String signParameters(Map<String, Object> paramsToSign, String secret) {
-        String canonical = paramsToSign.entrySet().stream()
-                .filter(entry -> entry.getValue() != null)
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> entry.getKey() + "=" + String.valueOf(entry.getValue()))
-                .collect(Collectors.joining("&"));
+    static Map<String, Object> metadataResourceOptions(MediaResourceType resourceType) {
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("resource_type", resourceType.cloudinaryValue());
+        options.put("type", "upload");
+        // The Admin API does not guarantee video duration unless media metadata is requested.
+        options.put("media_metadata", true);
+        return options;
+    }
 
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-1");
-            byte[] hash = digest.digest((canonical + secret).getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-1 is not available in this JVM", ex);
+    static TrustedMediaMetadata parseTrustedMetadata(Map<?, ?> result) {
+        Object duration = result.get("duration");
+        if (duration == null) {
+            duration = nestedValue(result, "video", "duration");
         }
+        if (duration == null) {
+            duration = nestedValue(result, "media_metadata", "duration");
+        }
+        if (duration == null) {
+            duration = nestedValue(result, "media_metadata", "video", "duration");
+        }
+
+        return new TrustedMediaMetadata(
+                stringValue(result.get("public_id")),
+                longValue(result.get("version")),
+                parseResourceType(result.get("resource_type")),
+                stringValue(result.get("type")),
+                stringValue(result.get("format")),
+                longValue(result.get("bytes")),
+                integerValue(result.get("width")),
+                integerValue(result.get("height")),
+                doubleValue(duration),
+                stringValue(result.get("secure_url"))
+        );
+    }
+
+    private static Object nestedValue(Map<?, ?> root, String... path) {
+        Object current = root;
+        for (String key : path) {
+            if (!(current instanceof Map<?, ?> currentMap)) {
+                return null;
+            }
+            current = currentMap.get(key);
+        }
+        return current;
+    }
+
+    /**
+     * Temporary diagnostic logging for the Admin API metadata shape.
+     *
+     * Deliberately logs only non-secret media metadata. Never add api_key, api_secret,
+     * response signatures, Authorization headers, access tokens, or refresh tokens here.
+     */
+    private static void logTrustedMetadataDiagnostic(
+            String requestedPublicId,
+            MediaResourceType requestedResourceType,
+            Map<?, ?> result,
+            TrustedMediaMetadata parsed
+    ) {
+        Object topLevelDuration = result.get("duration");
+        Object videoDuration = nestedValue(result, "video", "duration");
+        Object mediaMetadataDuration = nestedValue(result, "media_metadata", "duration");
+        Object mediaMetadataVideoDuration = nestedValue(result, "media_metadata", "video", "duration");
+
+        log.info(
+                "Cloudinary Admin metadata diagnostic: requestedPublicId={}, requestedResourceType={}, " +
+                        "returnedResourceType={}, deliveryType={}, version={}, format={}, bytes={}, width={}, height={}, " +
+                        "topLevelDuration={}, videoDuration={}, mediaMetadataDuration={}, " +
+                        "mediaMetadataVideoDuration={}, parsedDuration={}, hasVideoBlock={}, hasMediaMetadata={}, " +
+                        "hasMediaMetadataVideoBlock={}",
+                requestedPublicId,
+                requestedResourceType.cloudinaryValue(),
+                stringValue(result.get("resource_type")),
+                stringValue(result.get("type")),
+                longValue(result.get("version")),
+                stringValue(result.get("format")),
+                longValue(result.get("bytes")),
+                integerValue(result.get("width")),
+                integerValue(result.get("height")),
+                diagnosticValue(topLevelDuration),
+                diagnosticValue(videoDuration),
+                diagnosticValue(mediaMetadataDuration),
+                diagnosticValue(mediaMetadataVideoDuration),
+                parsed.durationSeconds(),
+                result.get("video") instanceof Map<?, ?>,
+                result.get("media_metadata") instanceof Map<?, ?>,
+                nestedValue(result, "media_metadata", "video") instanceof Map<?, ?>
+        );
+    }
+
+    private static Object diagnosticValue(Object value) {
+        if (value == null || value instanceof Number || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof CharSequence text) {
+            String raw = text.toString();
+            return raw.length() <= 64 ? raw : raw.substring(0, 64) + "...";
+        }
+        return "<" + value.getClass().getSimpleName() + ">";
     }
 
     private void requireConfigured() {
@@ -180,18 +245,18 @@ public class CloudinaryMediaGateway {
         }
     }
 
-    private MediaResourceType parseResourceType(Object value) {
+    private static MediaResourceType parseResourceType(Object value) {
         String raw = stringValue(value);
         if ("image".equalsIgnoreCase(raw)) return MediaResourceType.IMAGE;
         if ("video".equalsIgnoreCase(raw)) return MediaResourceType.VIDEO;
         throw new MediaValidationException("Cloudinary resource_type is invalid");
     }
 
-    private String stringValue(Object value) {
+    private static String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 
-    private long longValue(Object value) {
+    private static long longValue(Object value) {
         if (value instanceof Number n) return n.longValue();
         if (value == null) return 0L;
         try {
@@ -201,7 +266,7 @@ public class CloudinaryMediaGateway {
         }
     }
 
-    private Integer integerValue(Object value) {
+    private static Integer integerValue(Object value) {
         if (value == null) return null;
         if (value instanceof Number n) return n.intValue();
         try {
@@ -211,7 +276,7 @@ public class CloudinaryMediaGateway {
         }
     }
 
-    private Double doubleValue(Object value) {
+    private static Double doubleValue(Object value) {
         if (value == null) return null;
         if (value instanceof Number n) return n.doubleValue();
         try {

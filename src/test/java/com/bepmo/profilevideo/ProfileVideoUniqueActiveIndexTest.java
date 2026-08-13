@@ -14,6 +14,7 @@ import com.bepmo.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -68,6 +69,7 @@ class ProfileVideoUniqueActiveIndexTest {
     @Autowired private RestaurantRepository restaurantRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private EntityManager entityManager;
 
     private Long restaurantId;
 
@@ -130,11 +132,16 @@ class ProfileVideoUniqueActiveIndexTest {
 
         assertThat(updated).isEqualTo(1);
 
-        // Không throw — vì video cũ đã bị demote khỏi ACTIVE
+        // replaceActive() là JPQL bulk UPDATE nên persistence context vẫn có thể giữ
+        // entity oldVideo với status ACTIVE. Clear first-level cache để lần đọc tiếp theo
+        // phản ánh đúng trạng thái thực tế trong PostgreSQL.
+        entityManager.clear();
+
+        // Không throw — vì video cũ đã bị demote khỏi ACTIVE trong DB.
         ProfileVideo newVideo = profileVideoRepository.saveAndFlush(newVideo(VideoType.KITCHEN, VideoStatus.ACTIVE));
 
-        profileVideoRepository.findById(oldVideo.getId())
-                .ifPresent(v -> assertThat(v.getStatus()).isEqualTo(VideoStatus.REPLACED));
+        ProfileVideo persistedOld = profileVideoRepository.findById(oldVideo.getId()).orElseThrow();
+        assertThat(persistedOld.getStatus()).isEqualTo(VideoStatus.REPLACED);
         assertThat(newVideo.getStatus()).isEqualTo(VideoStatus.ACTIVE);
     }
 

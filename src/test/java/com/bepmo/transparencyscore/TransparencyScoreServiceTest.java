@@ -223,6 +223,28 @@ class TransparencyScoreServiceTest {
     }
 
     @Test
+    @DisplayName("getScore: Redis lỗi khi re-check sau DB lock → tính từ DB và không ghi cache")
+    void getScore_redisRecheckFailure_fallsBackToDatabase() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1"))
+                .thenReturn(null)
+                .thenThrow(new RedisConnectionFailureException("Redis down during re-check"));
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
+
+        assertThat(result.score()).isEqualTo(0);
+        verify(restaurantService).requireViewableRestaurantForUpdate(1L, null);
+        verify(valueOperations, times(2)).get("score:restaurant:1");
+        verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+    }
+
+    @Test
     @DisplayName("getScore: Redis lỗi khi ghi cache → vẫn trả score đã tính từ DB")
     void getScore_redisWriteFailure_returnsCalculatedScore() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -266,8 +288,8 @@ class TransparencyScoreServiceTest {
     }
 
     @Test
-    @DisplayName("evictCache: trong transaction → không gọi Redis trước commit, chỉ delete afterCommit")
-    void evictCache_insideTransaction_deletesOnlyAfterCommit() {
+    @DisplayName("evictCache: trong transaction → delete trước commit và delete lại afterCommit")
+    void evictCache_insideTransaction_doubleDeletes() {
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);
         try {
@@ -276,8 +298,11 @@ class TransparencyScoreServiceTest {
             verify(redisTemplate, never()).delete("score:restaurant:1");
             assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
 
-            TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+            TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.beforeCommit(false));
             verify(redisTemplate, times(1)).delete("score:restaurant:1");
+
+            TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+            verify(redisTemplate, times(2)).delete("score:restaurant:1");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
             TransactionSynchronizationManager.setActualTransactionActive(false);
@@ -292,6 +317,26 @@ class TransparencyScoreServiceTest {
 
         assertThatCode(() -> transparencyScoreService.evictCache(1L))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("evictCache: Redis lỗi trong transaction → cả hai lần delete đều không phá business flow")
+    void evictCache_insideTransaction_redisFailureDoesNotPropagate() {
+        doThrow(new RedisConnectionFailureException("Redis down"))
+                .when(redisTemplate).delete("score:restaurant:1");
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            transparencyScoreService.evictCache(1L);
+            var synchronization = TransactionSynchronizationManager.getSynchronizations().get(0);
+
+            assertThatCode(() -> synchronization.beforeCommit(false)).doesNotThrowAnyException();
+            assertThatCode(synchronization::afterCommit).doesNotThrowAnyException();
+            verify(redisTemplate, times(2)).delete("score:restaurant:1");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
     }
 
     private ProfileVideo video(VideoType type) {

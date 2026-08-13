@@ -6,7 +6,7 @@ import com.bepmo.media.entity.MediaUploadSession;
 import com.bepmo.media.gateway.CloudinaryMediaGateway;
 import com.bepmo.media.gateway.MediaValidationException;
 import com.bepmo.media.gateway.TrustedMediaMetadata;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -18,17 +18,49 @@ import java.util.Set;
  * Performs all Cloudinary verification before the DB finalization transaction begins.
  */
 @Service
-@RequiredArgsConstructor
 public class MediaVerificationService {
 
     private static final long MAX_IMAGE_BYTES = 10L * 1024 * 1024;
     private static final long MAX_VIDEO_BYTES = 100L * 1024 * 1024;
     private static final double MAX_VIDEO_DURATION_SECONDS = 60.0;
+    private static final int METADATA_POLL_ATTEMPTS = 6;
+    private static final long METADATA_POLL_DELAY_MILLIS = 1_000L;
     private static final Set<String> IMAGE_FORMATS = Set.of("jpg", "jpeg", "png", "webp");
     private static final Set<String> VIDEO_FORMATS = Set.of("mp4", "webm", "mov");
 
     private final CloudinaryMediaGateway cloudinaryGateway;
     private final MediaUploadSessionStateService stateService;
+    private final int metadataPollAttempts;
+    private final long metadataPollDelayMillis;
+    private final Sleeper sleeper;
+
+    @Autowired
+    public MediaVerificationService(
+            CloudinaryMediaGateway cloudinaryGateway,
+            MediaUploadSessionStateService stateService
+    ) {
+        this(
+                cloudinaryGateway,
+                stateService,
+                METADATA_POLL_ATTEMPTS,
+                METADATA_POLL_DELAY_MILLIS,
+                Thread::sleep
+        );
+    }
+
+    MediaVerificationService(
+            CloudinaryMediaGateway cloudinaryGateway,
+            MediaUploadSessionStateService stateService,
+            int metadataPollAttempts,
+            long metadataPollDelayMillis,
+            Sleeper sleeper
+    ) {
+        this.cloudinaryGateway = cloudinaryGateway;
+        this.stateService = stateService;
+        this.metadataPollAttempts = Math.max(1, metadataPollAttempts);
+        this.metadataPollDelayMillis = Math.max(0L, metadataPollDelayMillis);
+        this.sleeper = sleeper;
+    }
 
     public TrustedMediaMetadata verify(
             MediaUploadSession session,
@@ -42,15 +74,48 @@ public class MediaVerificationService {
                     responseSignature
             );
 
+            return fetchAndValidateMetadata(session, responseVersion);
+        } catch (MediaValidationException ex) {
+            stateService.rejectIfOpen(session.getId(), ex.getMessage());
+            throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        }
+    }
+
+    private TrustedMediaMetadata fetchAndValidateMetadata(
+            MediaUploadSession session,
+            long responseVersion
+    ) {
+        for (int attempt = 1; attempt <= metadataPollAttempts; attempt++) {
             TrustedMediaMetadata metadata = cloudinaryGateway.fetchTrustedMetadata(
                     session.getExpectedPublicId(),
                     session.getResourceType()
             );
-            validateMetadata(session, responseVersion, metadata);
-            return metadata;
-        } catch (MediaValidationException ex) {
-            stateService.rejectIfOpen(session.getId(), ex.getMessage());
-            throw new AppException(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+
+            try {
+                validateMetadata(session, responseVersion, metadata);
+                return metadata;
+            } catch (VideoMetadataNotReadyException ex) {
+                if (attempt == metadataPollAttempts) {
+                    throw new AppException(
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                            "Cloudinary video metadata is still processing. Retry finalization."
+                    );
+                }
+                pauseBeforeRetry();
+            }
+        }
+        throw new IllegalStateException("Metadata polling ended without a result");
+    }
+
+    private void pauseBeforeRetry() {
+        try {
+            sleeper.sleep(metadataPollDelayMillis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AppException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Cloudinary metadata verification was interrupted. Retry finalization."
+            );
         }
     }
 
@@ -102,13 +167,18 @@ public class MediaVerificationService {
         if (!VIDEO_FORMATS.contains(format)) {
             reject("Video format is not allowed");
         }
-        if (metadata.width() == null || metadata.width() <= 0
-                || metadata.height() == null || metadata.height() <= 0) {
+        if (metadata.width() == null || metadata.width() == 0
+                || metadata.height() == null || metadata.height() == 0) {
+            metadataNotReady();
+        }
+        if (metadata.width() < 0 || metadata.height() < 0) {
             reject("Cloudinary video dimensions are invalid");
         }
-        if (metadata.durationSeconds() == null
-                || !Double.isFinite(metadata.durationSeconds())
-                || metadata.durationSeconds() <= 0
+        if (metadata.durationSeconds() == null || metadata.durationSeconds() == 0) {
+            metadataNotReady();
+        }
+        if (!Double.isFinite(metadata.durationSeconds())
+                || metadata.durationSeconds() < 0
                 || metadata.durationSeconds() > MAX_VIDEO_DURATION_SECONDS) {
             reject("Video duration must be greater than 0 and at most 60 seconds");
         }
@@ -116,5 +186,17 @@ public class MediaVerificationService {
 
     private void reject(String message) {
         throw new MediaValidationException(message);
+    }
+
+    private void metadataNotReady() {
+        throw new VideoMetadataNotReadyException();
+    }
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
+    }
+
+    private static final class VideoMetadataNotReadyException extends RuntimeException {
     }
 }

@@ -129,11 +129,14 @@ public class TransparencyScoreService {
     /**
      * Score-affecting writers call this while holding the per-restaurant DB row lock.
      *
-     * When a DB transaction is active, defer Redis I/O until AFTER COMMIT. This keeps cache
-     * availability outside the business transaction boundary: a Redis outage must never roll
-     * back a successfully validated restaurant/video/proof mutation. Cache-miss score readers
-     * also acquire the same restaurant row lock before calculating and writing a new value, so
-     * the after-commit delete removes any value produced from the pre-commit state.
+     * When a DB transaction is active, deliberately delete twice:
+     * 1) BEFORE COMMIT, while the writer still owns the restaurant row lock. A cache-miss
+     *    reader must then wait for the committed DB state instead of returning stale cache in
+     *    the gap between the DB commit and the after-commit callback;
+     * 2) AFTER COMMIT, as a safety net for a value repopulated around the first delete.
+     *
+     * Both deletes are best-effort. A Redis outage must never roll back an otherwise valid DB
+     * mutation. If the DB transaction rolls back, the first delete only causes a recompute.
      *
      * Outside a DB transaction, evict immediately. Redis failures are logged and treated as a
      * cache degradation only; PostgreSQL remains the source of truth.
@@ -144,6 +147,11 @@ public class TransparencyScoreService {
         if (TransactionSynchronizationManager.isActualTransactionActive()
                 && TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void beforeCommit(boolean readOnly) {
+                    evict.run();
+                }
+
                 @Override
                 public void afterCommit() {
                     evict.run();

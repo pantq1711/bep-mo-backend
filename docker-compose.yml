@@ -40,6 +40,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      SPRING_DATA_REDIS_CONNECT_TIMEOUT: 1s
+      SPRING_DATA_REDIS_TIMEOUT: 1s
       # Override datasource/redis host — application.yml default là localhost (chạy ngoài Docker),
       # trong network của docker-compose phải trỏ vào tên service
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bepmo
@@ -47,9 +49,9 @@ services:
       APP_JWT_SECRET: ${APP_JWT_SECRET:-bepmo-local-dev-secret-key-change-me-in-production-32bytes-min}
       APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL:-admin@bepmo.local}
       APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-ChangeMe123!}
-      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
-      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
-      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?Set CLOUDINARY_API_KEY in .env}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?Set CLOUDINARY_API_SECRET in .env}
       CLOUDINARY_UPLOAD_PRESET: ${CLOUDINARY_UPLOAD_PRESET:-}
       MEDIA_UPLOAD_SESSION_TTL_SECONDS: ${MEDIA_UPLOAD_SESSION_TTL_SECONDS:-600}
     depends_on:
