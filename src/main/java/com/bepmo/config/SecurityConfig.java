@@ -1,6 +1,7 @@
 package com.bepmo.config;
 
 import com.bepmo.security.filter.JwtAuthFilter;
+import com.bepmo.security.filter.JwtAccessDeniedHandler;
 import com.bepmo.security.filter.JwtAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +31,7 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private List<String> allowedOrigins;
@@ -46,7 +48,9 @@ public class SecurityConfig {
                 // thực). Ghi đè bằng entry point riêng để trả đúng 401 — bug này làm
                 // tính năng "silent refresh" ở frontend không hoạt động, vì frontend chỉ
                 // tự refresh khi thấy đúng status 401.
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
 
                         // Public — Swagger

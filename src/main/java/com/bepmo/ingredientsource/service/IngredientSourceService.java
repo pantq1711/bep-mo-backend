@@ -45,7 +45,8 @@ public class IngredientSourceService {
     @Transactional
     public IngredientSourceResponse update(Long restaurantId, Long sourceId, Long ownerId,
                                             UpdateIngredientSourceRequest request) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        // Keep update in the same parent-lock protocol as delete/admin hide to prevent stale status resurrection.
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         IngredientSource source = requireSourceInRestaurant(sourceId, restaurantId);
 
         if (request.name() != null) source.setName(request.name());

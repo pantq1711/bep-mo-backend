@@ -21,7 +21,7 @@ public class AuthDtos {
 
     public record LoginRequest(
         @NotBlank @Email @Size(max = 255) String email,
-        @NotBlank String password
+        @NotBlank @Size(max = 100) String password
     ) {
         public LoginRequest {
             if (email != null) email = email.trim().toLowerCase(Locale.ROOT);
@@ -29,7 +29,7 @@ public class AuthDtos {
     }
 
     public record RefreshRequest(
-        @NotBlank String refreshToken
+        @NotBlank @Size(max = 255) String refreshToken
     ) {}
 
     // ── Response DTOs ─────────────────────────────────────────────────────────

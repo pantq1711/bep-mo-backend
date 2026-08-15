@@ -78,7 +78,7 @@ class RestaurantServiceTest {
     @Test
     @DisplayName("update: đúng chủ quán → cập nhật field không null")
     void update_success() {
-        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+        when(restaurantRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(restaurant));
 
         RestaurantProfile result = restaurantService.update(1L, 10L,
                 new UpdateRestaurantRequest("Quan Ngon Moi", null, null, null));
@@ -90,7 +90,7 @@ class RestaurantServiceTest {
     @Test
     @DisplayName("update: không phải chủ quán → 403 FORBIDDEN")
     void update_notOwner_forbidden() {
-        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+        when(restaurantRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(restaurant));
 
         assertThatThrownBy(() -> restaurantService.update(1L, 999L,
                 new UpdateRestaurantRequest("Hack", null, null, null)))

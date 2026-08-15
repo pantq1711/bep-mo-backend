@@ -11,6 +11,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 
 /**
@@ -36,6 +37,7 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
                           AuthenticationException authException) throws IOException {
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
 
         ErrorResponse body = new ErrorResponse(
                 HttpStatus.UNAUTHORIZED.value(),

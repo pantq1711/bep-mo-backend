@@ -84,7 +84,10 @@ public class TransparencyScoreService {
                     restaurantId, ex.getMessage());
         }
         if (cached != null) {
-            return cachedResponse(restaurantId, cached);
+            TransparencyScoreResponse cachedResponse = cachedResponseOrNull(restaurantId, cached);
+            if (cachedResponse != null) {
+                return cachedResponse;
+            }
         }
 
         // Cache miss: serialize this calculation with every score-affecting writer for the
@@ -101,7 +104,10 @@ public class TransparencyScoreService {
                         restaurantId, ex.getMessage());
             }
             if (cached != null) {
-                return cachedResponse(restaurantId, cached);
+                TransparencyScoreResponse cachedResponse = cachedResponseOrNull(restaurantId, cached);
+                if (cachedResponse != null) {
+                    return cachedResponse;
+                }
             }
         }
 
@@ -122,8 +128,20 @@ public class TransparencyScoreService {
         return new TransparencyScoreResponse(restaurantId, calculation.score(), MAX_SCORE);
     }
 
-    private TransparencyScoreResponse cachedResponse(Long restaurantId, String cached) {
-        return new TransparencyScoreResponse(restaurantId, Integer.parseInt(cached), MAX_SCORE);
+    private TransparencyScoreResponse cachedResponseOrNull(Long restaurantId, String cached) {
+        try {
+            int score = Integer.parseInt(cached);
+            if (score < 0 || score > MAX_SCORE) {
+                throw new NumberFormatException("score out of range");
+            }
+            return new TransparencyScoreResponse(restaurantId, score, MAX_SCORE);
+        } catch (NumberFormatException ex) {
+            // Redis is only a cache. Corrupt/stale manual data must not turn a public score read
+            // into HTTP 500; evict best-effort and recompute from PostgreSQL instead.
+            log.warn("Ignoring invalid Transparency Score cache value for restaurant {}", restaurantId);
+            safeDeleteCache(restaurantId);
+            return null;
+        }
     }
 
     /**

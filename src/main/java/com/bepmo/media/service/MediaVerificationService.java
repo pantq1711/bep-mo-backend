@@ -86,12 +86,11 @@ public class MediaVerificationService {
             long responseVersion
     ) {
         for (int attempt = 1; attempt <= metadataPollAttempts; attempt++) {
-            TrustedMediaMetadata metadata = cloudinaryGateway.fetchTrustedMetadata(
-                    session.getExpectedPublicId(),
-                    session.getResourceType()
-            );
-
             try {
+                TrustedMediaMetadata metadata = cloudinaryGateway.fetchTrustedMetadata(
+                        session.getExpectedPublicId(),
+                        session.getResourceType()
+                );
                 validateMetadata(session, responseVersion, metadata);
                 return metadata;
             } catch (VideoMetadataNotReadyException ex) {
@@ -100,6 +99,13 @@ public class MediaVerificationService {
                             HttpStatus.SERVICE_UNAVAILABLE,
                             "Cloudinary video metadata is still processing. Retry finalization."
                     );
+                }
+                pauseBeforeRetry();
+            } catch (AppException ex) {
+                boolean retryableFetchFailure = session.getResourceType() == MediaResourceType.VIDEO
+                        && ex.getStatus() == HttpStatus.BAD_GATEWAY;
+                if (!retryableFetchFailure || attempt == metadataPollAttempts) {
+                    throw ex;
                 }
                 pauseBeforeRetry();
             }
@@ -139,7 +145,7 @@ public class MediaVerificationService {
         if (!StringUtils.hasText(metadata.secureUrl()) || !metadata.secureUrl().startsWith("https://")) {
             reject("Cloudinary secure_url is missing or invalid");
         }
-        if (metadata.bytes() <= 0) {
+        if (metadata.bytes() < 0) {
             reject("Cloudinary file size metadata is invalid");
         }
 
@@ -148,6 +154,9 @@ public class MediaVerificationService {
                 : metadata.format().toLowerCase(Locale.ROOT);
 
         if (session.getResourceType() == MediaResourceType.IMAGE) {
+            if (metadata.bytes() == 0) {
+                reject("Cloudinary file size metadata is invalid");
+            }
             if (metadata.bytes() > MAX_IMAGE_BYTES) {
                 reject("Image exceeds the 10 MiB limit");
             }
@@ -161,6 +170,9 @@ public class MediaVerificationService {
             return;
         }
 
+        if (metadata.bytes() == 0) {
+            metadataNotReady();
+        }
         if (metadata.bytes() > MAX_VIDEO_BYTES) {
             reject("Video exceeds the 100 MiB limit");
         }

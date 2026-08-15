@@ -38,7 +38,8 @@ public class DishService {
 
     @Transactional
     public DishResponse update(Long restaurantId, Long dishId, Long ownerId, UpdateDishRequest request) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        // Serialize dish mutations per restaurant because Dish has no optimistic @Version.
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         Dish dish = requireDishInRestaurant(dishId, restaurantId);
 
         if (request.name() != null) dish.setName(request.name());
@@ -52,7 +53,8 @@ public class DishService {
 
     @Transactional
     public DishResponse setAvailability(Long restaurantId, Long dishId, Long ownerId, boolean available) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        // Same lock order as update/delete: restaurant -> dish.
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         Dish dish = requireDishInRestaurant(dishId, restaurantId);
         dish.setIsAvailable(available);
         return toResponse(dish);
@@ -60,7 +62,8 @@ public class DishService {
 
     @Transactional
     public void delete(Long restaurantId, Long dishId, Long ownerId) {
-        restaurantService.requireOwnedRestaurant(restaurantId, ownerId);
+        // Same lock order as update/availability to avoid update-vs-delete races.
+        restaurantService.requireOwnedRestaurantForUpdate(restaurantId, ownerId);
         Dish dish = requireDishInRestaurant(dishId, restaurantId);
         dishRepository.delete(dish);
     }

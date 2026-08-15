@@ -70,6 +70,48 @@ class MediaVerificationServiceTest {
     }
 
     @Test
+    void verify_retriesWhenCloudinaryAdminApiIsTemporarilyUnavailable() {
+        MediaUploadSession session = videoSession();
+        TrustedMediaMetadata ready = videoMetadata(7.0);
+        when(cloudinaryGateway.fetchTrustedMetadata(
+                session.getExpectedPublicId(), MediaResourceType.VIDEO
+        )).thenThrow(new AppException(
+                HttpStatus.BAD_GATEWAY,
+                "Cloudinary metadata verification is temporarily unavailable. Retry finalization."
+        )).thenReturn(ready);
+
+        TrustedMediaMetadata result = service.verify(
+                session, RESPONSE_VERSION, RESPONSE_SIGNATURE
+        );
+
+        assertSame(ready, result);
+        verify(cloudinaryGateway, times(2)).fetchTrustedMetadata(
+                session.getExpectedPublicId(), MediaResourceType.VIDEO
+        );
+        verifyNoInteractions(stateService);
+    }
+
+    @Test
+    void verify_retriesWhenVideoSizeIsTemporarilyMissing() {
+        MediaUploadSession session = videoSession();
+        TrustedMediaMetadata pending = videoMetadata(0L, 7.0);
+        TrustedMediaMetadata ready = videoMetadata(63L * 1024 * 1024, 7.0);
+        when(cloudinaryGateway.fetchTrustedMetadata(
+                session.getExpectedPublicId(), MediaResourceType.VIDEO
+        )).thenReturn(pending, ready);
+
+        TrustedMediaMetadata result = service.verify(
+                session, RESPONSE_VERSION, RESPONSE_SIGNATURE
+        );
+
+        assertSame(ready, result);
+        verify(cloudinaryGateway, times(2)).fetchTrustedMetadata(
+                session.getExpectedPublicId(), MediaResourceType.VIDEO
+        );
+        verifyNoInteractions(stateService);
+    }
+
+    @Test
     void verify_keepsSessionOpenWhenVideoMetadataIsStillProcessing() {
         MediaUploadSession session = videoSession();
         when(cloudinaryGateway.fetchTrustedMetadata(
@@ -148,13 +190,17 @@ class MediaVerificationServiceTest {
     }
 
     private TrustedMediaMetadata videoMetadata(Double durationSeconds) {
+        return videoMetadata(63L * 1024 * 1024, durationSeconds);
+    }
+
+    private TrustedMediaMetadata videoMetadata(long bytes, Double durationSeconds) {
         return new TrustedMediaMetadata(
                 "bep-mo/restaurants/20/profile-videos/test",
                 RESPONSE_VERSION,
                 MediaResourceType.VIDEO,
                 "upload",
                 "mp4",
-                63L * 1024 * 1024,
+                bytes,
                 1920,
                 1080,
                 durationSeconds,

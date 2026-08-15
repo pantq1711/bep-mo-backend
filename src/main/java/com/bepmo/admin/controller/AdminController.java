@@ -1,6 +1,8 @@
 package com.bepmo.admin.controller;
 
+import com.bepmo.admin.dto.AdminDtos.AdminRestaurantSummary;
 import com.bepmo.admin.service.AdminService;
+import com.bepmo.restaurant.dto.RestaurantDtos.PagedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,15 @@ public class AdminController {
     private final AdminService adminService;
 
     // ── Restaurant ────────────────────────────────────────────────────────────
+
+    @GetMapping("/restaurants")
+    @Operation(summary = "List restaurants for moderation")
+    public PagedResponse<AdminRestaurantSummary> listRestaurants(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return adminService.listRestaurants(page, size);
+    }
 
     @PatchMapping("/restaurants/{restaurantId}/hide")
     @Operation(summary = "Hide restaurant")

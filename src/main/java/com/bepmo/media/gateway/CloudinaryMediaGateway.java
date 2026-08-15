@@ -197,7 +197,7 @@ public class CloudinaryMediaGateway {
         Object mediaMetadataDuration = nestedValue(result, "media_metadata", "duration");
         Object mediaMetadataVideoDuration = nestedValue(result, "media_metadata", "video", "duration");
 
-        log.info(
+        log.debug(
                 "Cloudinary Admin metadata diagnostic: requestedPublicId={}, requestedResourceType={}, " +
                         "returnedResourceType={}, deliveryType={}, version={}, format={}, bytes={}, width={}, height={}, " +
                         "topLevelDuration={}, videoDuration={}, mediaMetadataDuration={}, " +

@@ -64,7 +64,7 @@ class IngredientSourceServiceTest {
     @Test
     @DisplayName("update: source thuộc quán khác (path variable sai) → 404")
     void update_sourceBelongsToDifferentRestaurant() {
-        when(restaurantService.requireOwnedRestaurant(2L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(2L, 10L)).thenReturn(restaurant);
         when(ingredientSourceRepository.findById(200L)).thenReturn(Optional.of(source)); // source.restaurantId=1
 
         assertThatThrownBy(() -> ingredientSourceService.update(2L, 200L, 10L,

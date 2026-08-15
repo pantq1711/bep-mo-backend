@@ -1,5 +1,5 @@
 package com.bepmo.admin;
-
+import com.bepmo.restaurant.repository.RestaurantRepository;
 import com.bepmo.admin.service.AdminService;
 import com.bepmo.common.exception.AppException;
 import com.bepmo.ingredientsource.entity.IngredientSource;
@@ -14,7 +14,6 @@ import com.bepmo.recentproof.entity.RecentProofStatus;
 import com.bepmo.recentproof.repository.RecentProofRepository;
 import com.bepmo.restaurant.entity.Restaurant;
 import com.bepmo.restaurant.entity.RestaurantStatus;
-import com.bepmo.restaurant.repository.RestaurantRepository;
 import com.bepmo.restaurant.service.RestaurantService;
 import com.bepmo.transparencyscore.service.TransparencyScoreService;
 import com.bepmo.user.entity.User;
@@ -27,8 +26,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,10 +54,30 @@ class AdminServiceTest {
     // ── Restaurant ────────────────────────────────────────────────────────────
 
     @Test
+    @DisplayName("listRestaurants: trả cả ACTIVE và HIDDEN để admin moderation")
+    void listRestaurants_returnsAllStatuses() {
+        Restaurant active = Restaurant.builder()
+                .id(1L).name("Quán A").address("Địa chỉ A").category("Phở")
+                .status(RestaurantStatus.ACTIVE).createdAt(OffsetDateTime.now().minusDays(1)).build();
+        Restaurant hidden = Restaurant.builder()
+                .id(2L).name("Quán B").address("Địa chỉ B").category("Bún")
+                .status(RestaurantStatus.HIDDEN).createdAt(OffsetDateTime.now()).build();
+        when(restaurantRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(hidden, active)));
+
+        var result = adminService.listRestaurants(0, 20);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.content()).extracting(r -> r.status())
+                .containsExactly(RestaurantStatus.HIDDEN, RestaurantStatus.ACTIVE);
+        verify(restaurantRepository).findAll(any(Pageable.class));
+    }
+
+    @Test
     @DisplayName("hideRestaurant: đặt status HIDDEN")
     void hideRestaurant_setsHidden() {
         Restaurant r = Restaurant.builder().id(1L).status(RestaurantStatus.ACTIVE).build();
-        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(r));
+        when(restaurantService.lockRestaurantForUpdate(1L)).thenReturn(r);
 
         adminService.hideRestaurant(1L);
 
@@ -66,7 +89,7 @@ class AdminServiceTest {
     @DisplayName("unhideRestaurant: đặt status ACTIVE + evict cache")
     void unhideRestaurant_setsActiveAndEvicts() {
         Restaurant r = Restaurant.builder().id(1L).status(RestaurantStatus.HIDDEN).build();
-        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(r));
+        when(restaurantService.lockRestaurantForUpdate(1L)).thenReturn(r);
 
         adminService.unhideRestaurant(1L);
 
@@ -77,7 +100,8 @@ class AdminServiceTest {
     @Test
     @DisplayName("hideRestaurant: không tồn tại → 404")
     void hideRestaurant_notFound() {
-        when(restaurantRepository.findById(999L)).thenReturn(Optional.empty());
+        when(restaurantService.lockRestaurantForUpdate(999L))
+                .thenThrow(new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
 
         assertThatThrownBy(() -> adminService.hideRestaurant(999L))
                 .isInstanceOf(AppException.class)

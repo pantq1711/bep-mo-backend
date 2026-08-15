@@ -2,6 +2,8 @@ package com.bepmo.security.filter;
 
 import com.bepmo.security.service.JwtBlacklistService;
 import com.bepmo.security.util.JwtUtil;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,18 +36,37 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = extractToken(request);
 
-        if (StringUtils.hasText(token) && jwtUtil.isTokenValid(token)
-                && !jwtBlacklistService.isBlacklisted(jwtUtil.getJti(token))) {
-            Long userId = jwtUtil.getUserIdFromToken(token);
-            String role  = jwtUtil.getRoleFromToken(token);
+        if (StringUtils.hasText(token)) {
+            try {
+                // Parse exactly once. Besides avoiding repeated crypto work, this removes a small
+                // expiry-boundary race where token validity could change between multiple parses.
+                Claims claims = jwtUtil.parseToken(token);
+                String jti = claims.getId();
+                String subject = claims.getSubject();
+                String role = claims.get("role", String.class);
 
-            // Spring Security expects role prefixed with "ROLE_"
-            var auth = new UsernamePasswordAuthenticationToken(
-                    userId,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
-            );
-            SecurityContextHolder.getContext().setAuthentication(auth);
+                if (!StringUtils.hasText(jti)
+                        || !StringUtils.hasText(subject)
+                        || !StringUtils.hasText(role)) {
+                    throw new IllegalArgumentException("JWT is missing required claims");
+                }
+
+                if (!jwtBlacklistService.isBlacklisted(jti)) {
+                    Long userId = Long.parseLong(subject);
+
+                    // Spring Security expects role prefixed with "ROLE_".
+                    var auth = new UsernamePasswordAuthenticationToken(
+                            userId,
+                            null,
+                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                    );
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
+            } catch (JwtException | IllegalArgumentException ex) {
+                // Leave the request unauthenticated. Protected routes are then handled by the
+                // configured AuthenticationEntryPoint and return 401 instead of leaking a 500.
+                log.debug("Invalid JWT token: {}", ex.getMessage());
+            }
         }
 
         filterChain.doFilter(request, response);

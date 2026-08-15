@@ -34,7 +34,7 @@ spring:
 app:
   jwt:
     secret: ${JWT_SECRET}                     # tối thiểu 32 ký tự
-    access-token-expiration-ms: 900000        # 15 phút — verify lại con số thật trong code/JwtUtil trước khi tin
+    access-token-expiration-ms:900000         # 15 phút — verify lại con số thật trong code/JwtUtil trước khi tin
     refresh-token-expiration-ms: 2592000000   # 30 ngày — verify lại con số thật
 
   admin:

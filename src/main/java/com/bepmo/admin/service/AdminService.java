@@ -1,5 +1,6 @@
 package com.bepmo.admin.service;
 
+import com.bepmo.admin.dto.AdminDtos.AdminRestaurantSummary;
 import com.bepmo.common.exception.AppException;
 import com.bepmo.ingredientsource.entity.IngredientSource;
 import com.bepmo.ingredientsource.entity.IngredientSourceStatus;
@@ -11,6 +12,7 @@ import com.bepmo.recentproof.entity.RecentProof;
 import com.bepmo.recentproof.entity.RecentProofStatus;
 import com.bepmo.recentproof.repository.RecentProofRepository;
 import com.bepmo.restaurant.entity.Restaurant;
+import com.bepmo.restaurant.dto.RestaurantDtos.PagedResponse;
 import com.bepmo.restaurant.entity.RestaurantStatus;
 import com.bepmo.restaurant.repository.RestaurantRepository;
 import com.bepmo.restaurant.service.RestaurantService;
@@ -19,6 +21,9 @@ import com.bepmo.user.entity.User;
 import com.bepmo.user.entity.UserStatus;
 import com.bepmo.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +38,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AdminService {
 
-    private final RestaurantRepository restaurantRepository;
+    private static final int MAX_PAGE_SIZE = 50;
+
     private final RestaurantService restaurantService;
+    private final RestaurantRepository restaurantRepository;
     private final ProfileVideoRepository profileVideoRepository;
     private final IngredientSourceRepository ingredientSourceRepository;
     private final RecentProofRepository recentProofRepository;
@@ -43,9 +50,25 @@ public class AdminService {
 
     // ── Restaurant ────────────────────────────────────────────────────────────
 
+    @Transactional(readOnly = true)
+    public PagedResponse<AdminRestaurantSummary> listRestaurants(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(
+                safePage,
+                safeSize,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+        return PagedResponse.from(
+                restaurantRepository.findAll(pageable).map(this::toAdminRestaurantSummary)
+        );
+    }
+
     @Transactional
     public void hideRestaurant(Long restaurantId) {
-        Restaurant r = findRestaurant(restaurantId);
+        // Share the same row lock as owner profile edits and score-affecting writers.
+        Restaurant r = restaurantService.lockRestaurantForUpdate(restaurantId);
         r.setStatus(RestaurantStatus.HIDDEN);
         // Profile bị ẩn không còn public; xoá cache score để trạng thái moderation không giữ
         // dữ liệu cache cũ xuyên qua lần hide/unhide tiếp theo.
@@ -54,7 +77,8 @@ public class AdminService {
 
     @Transactional
     public void unhideRestaurant(Long restaurantId) {
-        Restaurant r = findRestaurant(restaurantId);
+        // Prevent stale owner updates from overwriting moderation status.
+        Restaurant r = restaurantService.lockRestaurantForUpdate(restaurantId);
         r.setStatus(RestaurantStatus.ACTIVE);
         transparencyScoreService.evictCache(restaurantId);
     }
@@ -157,9 +181,15 @@ public class AdminService {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private Restaurant findRestaurant(Long id) {
-        return restaurantRepository.findById(id)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+    private AdminRestaurantSummary toAdminRestaurantSummary(Restaurant r) {
+        return new AdminRestaurantSummary(
+                r.getId(),
+                r.getName(),
+                r.getAddress(),
+                r.getCategory(),
+                r.getStatus(),
+                r.getCreatedAt()
+        );
     }
 
     private ProfileVideo findVideoForUpdate(Long id) {

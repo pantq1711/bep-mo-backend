@@ -75,7 +75,7 @@ class DishServiceTest {
     @Test
     @DisplayName("update: dish thuộc quán khác (path variable sai) → 404, defense-in-depth")
     void update_dishBelongsToDifferentRestaurant() {
-        when(restaurantService.requireOwnedRestaurant(2L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(2L, 10L)).thenReturn(restaurant);
         when(dishRepository.findById(100L)).thenReturn(Optional.of(dish)); // dish.restaurantId = 1, không phải 2
 
         assertThatThrownBy(() -> dishService.update(2L, 100L, 10L,
@@ -87,7 +87,7 @@ class DishServiceTest {
     @Test
     @DisplayName("setAvailability: đúng chủ quán → cập nhật isAvailable")
     void setAvailability_success() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(dishRepository.findById(100L)).thenReturn(Optional.of(dish));
 
         DishResponse result = dishService.setAvailability(1L, 100L, 10L, false);
@@ -98,7 +98,7 @@ class DishServiceTest {
     @Test
     @DisplayName("delete: dish không tồn tại → 404")
     void delete_dishNotFound() {
-        when(restaurantService.requireOwnedRestaurant(1L, 10L)).thenReturn(restaurant);
+        when(restaurantService.requireOwnedRestaurantForUpdate(1L, 10L)).thenReturn(restaurant);
         when(dishRepository.findById(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> dishService.delete(1L, 999L, 10L))

@@ -87,6 +87,25 @@ class TransparencyScoreServiceTest {
     }
 
     @Test
+    @DisplayName("getScore: cache Redis corrupt → bỏ cache và tính lại từ DB, không trả 500")
+    void getScore_corruptCacheValue_fallsBackToDatabase() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("score:restaurant:1")).thenReturn("not-a-number", null);
+        when(ingredientSourceRepository.existsByRestaurantIdAndStatus(1L, IngredientSourceStatus.ACTIVE))
+                .thenReturn(false);
+        when(profileVideoRepository.findByRestaurantIdAndStatus(1L, VideoStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(recentProofRepository.findTopByRestaurantIdAndStatusOrderByUploadedAtDesc(1L, RecentProofStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        TransparencyScoreResponse result = transparencyScoreService.getScore(1L, null);
+
+        assertThat(result.score()).isEqualTo(0);
+        verify(redisTemplate).delete("score:restaurant:1");
+        verify(restaurantService).requireViewableRestaurantForUpdate(1L, null);
+    }
+
+    @Test
     @DisplayName("getScore: cache miss ban đầu nhưng có cache sau khi lấy DB lock → dùng cache, không tính lại")
     void getScore_cacheFilledWhileWaitingForLock_usesSecondCacheCheck() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);

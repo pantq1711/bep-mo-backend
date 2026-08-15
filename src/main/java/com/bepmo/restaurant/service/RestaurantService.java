@@ -52,7 +52,8 @@ public class RestaurantService {
 
     @Transactional
     public RestaurantProfile update(Long restaurantId, Long ownerId, UpdateRestaurantRequest request) {
-        Restaurant restaurant = requireOwnedRestaurant(restaurantId, ownerId);
+        // Serialize profile edits with moderation writes; Restaurant has no optimistic @Version.
+        Restaurant restaurant = requireOwnedRestaurantForUpdate(restaurantId, ownerId);
 
         // Partial update — chỉ field client gửi (khác null) mới bị ghi đè
         if (request.name() != null) restaurant.setName(request.name());
