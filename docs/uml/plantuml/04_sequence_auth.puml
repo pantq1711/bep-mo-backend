@@ -1,0 +1,70 @@
+@startuml
+title SEQUENCE - LOGIN / REFRESH / LOGOUT
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam ArrowFontSize 14
+skinparam NoteFontSize 14
+skinparam maxMessageSize 55
+skinparam sequence {
+  ParticipantFontSize 15
+  ActorFontSize 15
+  ArrowFontSize 14
+  ParticipantPadding 38
+  BoxPadding 18
+  MessageAlign center
+  LifeLineBorderColor #6B7C93
+  ParticipantBorderColor #1F4E79
+  ParticipantBackgroundColor #EAF2F8
+}
+autonumber
+
+actor "Người dùng" as User
+participant "React UI" as React
+participant AuthController
+participant AuthService
+participant JwtUtil
+database PostgreSQL
+participant Redis
+
+group Đăng nhập
+  User -> React: Nhập email và mật khẩu
+  React -> AuthController: POST /api/v1/auth/login
+  AuthController -> AuthService: login(request)
+  AuthService -> PostgreSQL: Tải user và xác minh BCrypt
+  PostgreSQL --> AuthService: User hợp lệ
+  AuthService -> JwtUtil: generateAccessToken(userId, email, role)
+  JwtUtil --> AuthService: Access token có jti
+  AuthService -> PostgreSQL: Lưu hash refresh token
+  AuthService --> AuthController: Access token + refresh token
+  AuthController --> React: Access token + refresh token
+end
+
+group Làm mới phiên
+  React -> AuthController: POST /api/v1/auth/refresh
+  AuthController -> AuthService: refresh(RefreshRequest request)
+  AuthService -> PostgreSQL: Kiểm tra token chưa revoke và còn hạn
+  AuthService -> PostgreSQL: Rotate refresh token
+  AuthService -> JwtUtil: Tạo access token mới
+  AuthService --> AuthController: Cặp token mới
+  AuthController --> React: Cặp token mới
+end
+
+group Đăng xuất
+  User -> React: Chọn đăng xuất
+  React -> AuthController: POST /api/v1/auth/logout\nRefreshRequest + Bearer access token
+  AuthController -> AuthService: logout(rawRefreshToken, rawAccessToken)
+  AuthService -> PostgreSQL: Revoke refresh token
+  AuthService -> Redis: Blacklist access jti\n(best-effort)
+  AuthService --> AuthController: Hoàn tất
+  AuthController --> React: 200 OK
+end
+
+note over AuthController, Redis
+  401: thiếu hoặc sai token. 403: đã xác thực nhưng không đủ quyền.
+  Vô hiệu hóa user không thu hồi ngay access token đã phát hành.
+end note
+@enduml

@@ -1,0 +1,77 @@
+@startuml
+title CLASS DIAGRAM - TRANSPARENCY SCORE / ADMIN
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 90
+skinparam ranksep 100
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.4
+skinparam NoteFontSize 14
+allowmixing
+skinparam classAttributeIconSize 0
+skinparam class {
+  FontSize 15
+  AttributeFontSize 14
+  BackgroundColor #F7FAFC
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+
+class TransparencyScoreController {
+  + getScore(Long currentUserId, Long restaurantId)
+}
+
+class TransparencyScoreService {
+  + getScore(restaurantId, userId)
+  + evictCache(restaurantId)
+  - calculateCompleteness(Long restaurantId)
+  - calculateFreshness(Optional<RecentProof> latestProof, OffsetDateTime now)
+}
+
+class AdminController {
+  + listRestaurants(int page, int size)
+  + hideRestaurant(Long restaurantId)
+  + unhideRestaurant(Long restaurantId)
+  + hideVideo(Long videoId)
+  + unhideVideo(Long videoId)
+  + hideIngredientSource(Long sourceId)
+  + unhideIngredientSource(Long sourceId)
+  + hideRecentProof(Long proofId)
+  + unhideRecentProof(Long proofId)
+  + disableUser(Long userId)
+  + enableUser(Long userId)
+}
+
+class AdminService {
+  + listRestaurants(int page, int size)
+  + hideRestaurant(Long restaurantId)
+  + unhideRestaurant(Long restaurantId)
+  + hideVideo(Long videoId)
+  + unhideVideo(Long videoId)
+  + hideIngredientSource(Long sourceId)
+  + unhideIngredientSource(Long sourceId)
+  + hideRecentProof(Long proofId)
+  + unhideRecentProof(Long proofId)
+  + disableUser(Long userId)
+  + enableUser(Long userId)
+}
+
+database "PostgreSQL\nSource of truth" as PostgreSQL
+rectangle "Redis\nBest-effort cache" as Redis
+
+TransparencyScoreController --> TransparencyScoreService
+TransparencyScoreService --> PostgreSQL : đọc dữ liệu ACTIVE
+TransparencyScoreService ..> Redis : cache + eviction
+AdminController --> AdminService
+AdminService --> PostgreSQL : lock + state transition
+
+note bottom of TransparencyScoreService
+  Điểm tối đa 100: Completeness 80 + Freshness 20.
+  Không có bảng TransparencyScore riêng.
+end note
+@enduml

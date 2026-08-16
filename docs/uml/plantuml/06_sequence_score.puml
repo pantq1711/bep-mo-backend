@@ -1,0 +1,71 @@
+@startuml
+title SEQUENCE - TÍNH TRANSPARENCY SCORE
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam ArrowFontSize 14
+skinparam NoteFontSize 14
+skinparam maxMessageSize 58
+skinparam sequence {
+  ParticipantFontSize 15
+  ActorFontSize 15
+  ArrowFontSize 14
+  ParticipantPadding 42
+  BoxPadding 18
+  MessageAlign center
+  LifeLineBorderColor #6B7C93
+  ParticipantBorderColor #1F4E79
+  ParticipantBackgroundColor #EAF2F8
+}
+autonumber
+
+actor "Khách truy cập" as Visitor
+participant ScoreController
+participant "TransparencyScore\nService" as ScoreService
+participant RestaurantService
+participant Redis
+database PostgreSQL
+
+Visitor -> ScoreController: GET /api/v1/restaurants/{restaurantId}/\ntransparency-score
+ScoreController -> ScoreService: getScore(restaurantId, currentUserId)
+ScoreService -> RestaurantService: requireViewableRestaurant(restaurantId, currentUserId)
+RestaurantService -> PostgreSQL: Tìm restaurant có thể xem
+
+alt Không tồn tại hoặc HIDDEN với public
+  PostgreSQL --> RestaurantService: Không thể xem
+  RestaurantService --> ScoreService: Not Found
+  ScoreService --> ScoreController: Not Found
+  ScoreController --> Visitor: 404 Not Found
+else Có thể xem
+  PostgreSQL --> RestaurantService: Restaurant có thể xem
+  RestaurantService --> ScoreService: Restaurant
+  ScoreService -> Redis: GET score cache
+  alt Cache hợp lệ
+    Redis --> ScoreService: ScoreResponse
+  else Cache miss, corrupt hoặc Redis down
+    ScoreService -> RestaurantService: requireViewableRestaurantForUpdate(restaurantId, currentUserId)
+    RestaurantService -> PostgreSQL: Lock row restaurant
+    PostgreSQL --> RestaurantService: Restaurant đã khóa
+    RestaurantService --> ScoreService: Restaurant
+    ScoreService -> Redis: GET score cache lần hai
+    alt Cache lần hai hợp lệ
+      Redis --> ScoreService: ScoreResponse
+    else Vẫn miss, corrupt hoặc Redis down
+      ScoreService -> PostgreSQL: Đọc dữ liệu ACTIVE
+      PostgreSQL --> ScoreService: Source + video + proof
+      ScoreService -> ScoreService: Tính Completeness + Freshness
+      ScoreService -> Redis: SET cache với dynamic TTL\n(best-effort)
+    end
+  end
+  ScoreService --> ScoreController: Score từ 0 đến 100
+  ScoreController --> Visitor: 200 OK + ScoreResponse
+end
+
+note over ScoreService, Redis
+  PostgreSQL là nguồn dữ liệu chính.
+  Lỗi Redis không làm rollback nghiệp vụ.
+end note
+@enduml

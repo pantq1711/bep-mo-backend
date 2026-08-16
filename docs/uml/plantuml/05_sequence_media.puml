@@ -1,0 +1,96 @@
+@startuml
+title SEQUENCE - CẤP QUYỀN UPLOAD VÀ FINALIZE MEDIA
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam ArrowFontSize 14
+skinparam NoteFontSize 14
+skinparam maxMessageSize 48
+skinparam sequence {
+  ParticipantFontSize 15
+  ActorFontSize 15
+  ArrowFontSize 14
+  ParticipantPadding 32
+  BoxPadding 16
+  MessageAlign center
+  LifeLineBorderColor #6B7C93
+  ParticipantBorderColor #1F4E79
+  ParticipantBackgroundColor #EAF2F8
+}
+autonumber
+
+actor "Chủ quán" as Owner
+participant Browser
+participant MediaUploadController as MediaController
+participant MediaUploadSessionService as SessionService
+participant ProfileVideoController as VideoController
+participant ProfileVideoService as VideoService
+participant ProfileVideoFinalizationService as VideoFinalizer
+participant RecentProofController as ProofController
+participant RecentProofService as ProofService
+participant RecentProofFinalizationService as ProofFinalizer
+participant MediaVerificationService as VerificationService
+participant "Cloudinary\nUpload API" as UploadAPI
+participant "Cloudinary\nAdmin API" as AdminAPI
+database PostgreSQL
+participant Redis
+
+Owner -> Browser: Chọn ảnh hoặc video
+Browser -> MediaController: POST /api/v1/media/\nupload-sessions
+MediaController -> SessionService: issue(ownerId, request)
+SessionService -> PostgreSQL: Lưu media_upload_sessions
+SessionService --> Browser: Signed capability ngắn hạn
+
+Browser -> UploadAPI: Upload trực tiếp lên Cloudinary
+UploadAPI --> Browser: version + response signature
+
+alt Profile Video
+  Browser -> VideoController: POST /api/v1/restaurants/{restaurantId}/videos
+  VideoController -> VideoService: upload(restaurantId, currentUserId, request)
+  VideoService -> SessionService: requireAuthorizedForPublish(sessionId, ownerId,\nrestaurantId, PROFILE_VIDEO)
+  SessionService -> PostgreSQL: Tải session và kiểm tra binding
+  SessionService --> VideoService: MediaUploadSession
+  VideoService -> VerificationService: verify(session, responseVersion, responseSignature)
+  VerificationService -> VerificationService: Xác minh response signature cục bộ
+  VerificationService -> AdminAPI: Lấy trusted metadata
+  AdminAPI --> VerificationService: type, bytes, duration, public_id
+  VerificationService -> VerificationService: Validate metadata và giới hạn media
+  VerificationService --> VideoService: TrustedMediaMetadata
+  VideoService -> VideoFinalizer: finalizeUpload(restaurantId, ownerId,\nuploadSessionId, metadata)
+  VideoFinalizer -> PostgreSQL: Lock restaurant
+  VideoFinalizer -> PostgreSQL: Lock session
+  VideoFinalizer -> PostgreSQL: Publish video; session = CONSUMED
+  VideoFinalizer -> Redis: Evict score cache\n(best-effort)
+  VideoFinalizer --> VideoService: ProfileVideo
+  VideoService --> VideoController: ProfileVideoResponse
+  VideoController --> Browser: 201 Created
+else Recent Proof
+  Browser -> ProofController: POST /api/v1/restaurants/{restaurantId}/recent-proofs
+  ProofController -> ProofService: create(restaurantId, currentUserId, request)
+  ProofService -> SessionService: requireAuthorizedForPublish(sessionId, ownerId,\nrestaurantId, RECENT_PROOF)
+  SessionService -> PostgreSQL: Tải session và kiểm tra binding
+  SessionService --> ProofService: MediaUploadSession
+  ProofService -> VerificationService: verify(session, responseVersion, responseSignature)
+  VerificationService -> VerificationService: Xác minh response signature cục bộ
+  VerificationService -> AdminAPI: Lấy trusted metadata
+  AdminAPI --> VerificationService: type, bytes, duration, public_id
+  VerificationService -> VerificationService: Validate metadata và giới hạn media
+  VerificationService --> ProofService: TrustedMediaMetadata
+  ProofService -> ProofFinalizer: finalizeUpload(restaurantId, ownerId,\nuploadSessionId, metadata, note)
+  ProofFinalizer -> PostgreSQL: Lock restaurant
+  ProofFinalizer -> PostgreSQL: Lock session
+  ProofFinalizer -> PostgreSQL: Publish proof; session = CONSUMED
+  ProofFinalizer -> Redis: Evict score cache\n(best-effort)
+  ProofFinalizer --> ProofService: RecentProof
+  ProofService --> ProofController: RecentProofResponse
+  ProofController --> Browser: 201 Created
+end
+
+note over Browser, AdminAPI
+  Kiểm tra phía client chỉ hỗ trợ UX.
+  Trust boundary nằm ở bước backend xác minh metadata.
+end note
+@enduml

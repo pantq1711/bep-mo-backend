@@ -1,0 +1,57 @@
+@startuml
+title CLASS DIAGRAM - AUTH / SECURITY
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 85
+skinparam ranksep 95
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.4
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam class {
+  FontSize 15
+  AttributeFontSize 14
+  BackgroundColor #F7FAFC
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+
+class AuthController {
+  + register(request)
+  + login(request)
+  + refresh(request)
+  + logout(RefreshRequest request, HttpServletRequest httpRequest)
+}
+
+class AuthService {
+  + register(request)
+  + login(request)
+  + refresh(RefreshRequest request)
+  + logout(String rawRefreshToken, String rawAccessToken)
+}
+
+class JwtUtil {
+  + generateAccessToken(Long userId, String email, String role)
+  + parseToken(token)
+  + getJti(token)
+}
+
+class JwtBlacklistService {
+  + blacklist(jti, ttlSeconds)
+  + isBlacklisted(jti)
+}
+
+interface UserRepository
+interface RefreshTokenRepository
+
+AuthController --> AuthService : gọi
+AuthService --> JwtUtil : tạo và đọc JWT
+AuthService --> JwtBlacklistService : logout best-effort
+AuthService --> UserRepository
+AuthService --> RefreshTokenRepository
+@enduml

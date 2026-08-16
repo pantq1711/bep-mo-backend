@@ -1,0 +1,82 @@
+@startuml
+title SEQUENCE - TẠO / CẬP NHẬT HỒ SƠ QUÁN
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam ArrowFontSize 14
+skinparam NoteFontSize 14
+skinparam maxMessageSize 55
+skinparam sequence {
+  ParticipantFontSize 15
+  ActorFontSize 15
+  ArrowFontSize 14
+  ParticipantPadding 45
+  BoxPadding 18
+  MessageAlign center
+  LifeLineBorderColor #6B7C93
+  ParticipantBorderColor #1F4E79
+  ParticipantBackgroundColor #EAF2F8
+}
+autonumber
+
+actor "Chủ quán" as Owner
+participant "React UI" as React
+participant RestaurantController
+participant RestaurantService
+database PostgreSQL
+participant GlobalExceptionHandler
+
+Owner -> React: Nhập thông tin hồ sơ quán
+
+group Tạo hồ sơ
+  React -> RestaurantController: POST /api/v1/restaurants
+  RestaurantController -> RestaurantService: create(currentUserId, request)
+  RestaurantService -> PostgreSQL: existsByOwnerId(ownerId)
+  alt Owner đã có restaurant
+    PostgreSQL --> RestaurantService: true
+    RestaurantService --> GlobalExceptionHandler: AppException(409)
+    GlobalExceptionHandler --> React: 409 Conflict
+  else Owner chưa có restaurant
+    PostgreSQL --> RestaurantService: false
+    RestaurantService -> PostgreSQL: INSERT (không row-lock)
+    alt Race vi phạm UNIQUE(owner_id)
+      PostgreSQL --> RestaurantService: DataIntegrityViolationException
+      RestaurantService --> GlobalExceptionHandler: Exception
+      GlobalExceptionHandler --> React: 409 Conflict
+    else Commit thành công
+      PostgreSQL --> RestaurantService: Committed
+      RestaurantService --> RestaurantController: Restaurant DTO
+      RestaurantController --> React: 201 Created
+    end
+  end
+end
+
+group Cập nhật hồ sơ
+  React -> RestaurantController: PUT /api/v1/restaurants/{restaurantId}
+  RestaurantController -> RestaurantService: update(restaurantId, currentUserId, request)
+  RestaurantService -> PostgreSQL: Lock restaurant theo restaurantId
+  alt Restaurant không tồn tại
+    PostgreSQL --> RestaurantService: Not found
+    RestaurantService --> GlobalExceptionHandler: AppException(404)
+    GlobalExceptionHandler --> React: 404 Not Found
+  else Không thuộc Owner
+    PostgreSQL --> RestaurantService: Owner khác
+    RestaurantService --> GlobalExceptionHandler: AppException(403)
+    GlobalExceptionHandler --> React: 403 Forbidden
+  else Thuộc Owner
+    PostgreSQL --> RestaurantService: Restaurant đã khóa
+    RestaurantService -> PostgreSQL: UPDATE trong transaction
+    PostgreSQL --> RestaurantService: Committed
+    RestaurantService --> RestaurantController: Restaurant DTO
+    RestaurantController --> React: 200 OK
+  end
+end
+
+note over Owner, PostgreSQL
+  Restaurant HIDDEN trả 404 ở public detail,
+  nhưng Owner vẫn quản lý qua /api/v1/restaurants/me.
+end note
+@enduml

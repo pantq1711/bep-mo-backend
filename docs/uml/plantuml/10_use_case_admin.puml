@@ -1,0 +1,45 @@
+@startuml
+title USE CASE CHI TIẾT - ADMIN
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 12
+skinparam nodesep 95
+skinparam ranksep 95
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.5
+skinparam ActorFontSize 15
+skinparam UsecaseFontSize 15
+skinparam RectangleFontSize 16
+skinparam NoteFontSize 14
+skinparam linetype ortho
+
+actor "Quản trị viên" as Admin
+
+rectangle "Chức năng Admin" as AdminSystem {
+  usecase "Xem danh sách\nnhà hàng" as A1
+  usecase "Ẩn hoặc hiện lại\nnhà hàng" as A2
+  usecase "Ẩn hoặc hiện lại video,\nnguồn và Recent Proof" as A3
+  usecase "Kích hoạt hoặc\nvô hiệu hóa user" as A4
+  usecase "RBAC ADMIN; 409 cho transition\nvideo / nguồn / Recent Proof" as A5
+
+  A1 -[hidden]down-> A3
+  A2 -[hidden]down-> A4
+  A3 -[hidden]down-> A5
+}
+
+Admin --> A1
+Admin --> A2
+Admin --> A3
+Admin --> A4
+Admin --> A5
+
+note bottom of AdminSystem
+  Admin Console hiện có UI cho danh sách và hide/unhide restaurant.
+  Các thao tác còn lại sử dụng API/Postman trong phạm vi demo.
+  UI dùng thông báo lỗi chung; không xử lý 409 chuyên biệt.
+end note
+@enduml

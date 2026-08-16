@@ -1,0 +1,73 @@
+@startuml
+title SEQUENCE - ADMIN MODERATION
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam ArrowFontSize 14
+skinparam NoteFontSize 14
+skinparam maxMessageSize 55
+skinparam sequence {
+  ParticipantFontSize 15
+  ActorFontSize 15
+  ArrowFontSize 14
+  ParticipantPadding 42
+  BoxPadding 18
+  MessageAlign center
+  LifeLineBorderColor #6B7C93
+  ParticipantBorderColor #1F4E79
+  ParticipantBackgroundColor #EAF2F8
+}
+autonumber
+
+actor "Chủ quán" as Owner
+actor "Quản trị viên" as Admin
+participant AdminController
+participant AdminService
+database PostgreSQL
+participant "Public API" as PublicAPI
+
+Owner -> AdminController: GET /api/v1/admin/restaurants
+AdminController --> Owner: 403 Forbidden
+
+Admin -> AdminController: GET /api/v1/admin/restaurants
+AdminController -> AdminService: listRestaurants(page, size)
+AdminService -> PostgreSQL: Query danh sách phân trang
+PostgreSQL --> AdminService: PagedResponse
+AdminService --> AdminController: Danh sách nhà hàng
+AdminController --> Admin: 200 OK
+
+group Moderation restaurant
+  Admin -> AdminController: PATCH /restaurants/{restaurantId}/hide hoặc /unhide
+  AdminController -> AdminService: hideRestaurant(restaurantId) /\nunhideRestaurant(restaurantId)
+  AdminService -> PostgreSQL: Lock restaurant và đặt HIDDEN / ACTIVE
+  PostgreSQL --> AdminService: Updated
+  AdminService --> AdminController: Hoàn tất
+  AdminController --> Admin: 204 No Content
+end
+
+group Moderation video / nguồn / proof
+  Admin -> AdminController: PATCH endpoint hide hoặc unhide tương ứng
+  AdminController -> AdminService: hideVideo(videoId) / unhideVideo(videoId) /\nhideIngredientSource(sourceId) / unhideIngredientSource(sourceId) /\nhideRecentProof(proofId) / unhideRecentProof(proofId)
+  AdminService -> PostgreSQL: Lock tài nguyên và kiểm tra transition
+  alt State transition hợp lệ
+    PostgreSQL --> AdminService: Updated
+    AdminService --> AdminController: Hoàn tất
+    AdminController --> Admin: 204 No Content
+  else Xung đột trạng thái
+    PostgreSQL --> AdminService: Conflict
+    AdminService --> AdminController: Conflict
+    AdminController --> Admin: 409 Conflict
+  end
+end
+
+Admin -> PublicAPI: GET public restaurant detail
+PublicAPI --> Admin: 404 nếu restaurant HIDDEN
+
+note over Admin, PostgreSQL
+  Admin Console hiện có UI cho list/hide/unhide restaurant.
+  Moderation tài nguyên con và user được kiểm tra qua API/Postman.
+end note
+@enduml

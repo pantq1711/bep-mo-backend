@@ -1,0 +1,108 @@
+@startuml
+title ENTITY-RELATIONSHIP DIAGRAM - BẾP MỞ
+top to bottom direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam nodesep 90
+skinparam ranksep 105
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.4
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam class {
+  FontSize 15
+  AttributeFontSize 14
+  BackgroundColor #FFFFFF
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+
+entity users {
+  * id : bigint <<PK>>
+  --
+  email : varchar <<UQ>>
+  password_hash : varchar
+  role : varchar
+  status : varchar
+}
+
+entity refresh_tokens {
+  * id : bigint <<PK>>
+  --
+  user_id : bigint <<FK>>
+  token_hash : varchar <<UQ>>
+  expires_at : timestamptz
+  revoked_at : timestamptz?
+}
+
+entity restaurants {
+  * id : bigint <<PK>>
+  --
+  owner_id : bigint <<FK,UQ>>
+  name : varchar
+  status : varchar
+}
+
+entity dishes {
+  * id : bigint <<PK>>
+  --
+  restaurant_id : bigint <<FK>>
+  name : varchar
+  price : numeric(12,2)
+  is_available : boolean
+}
+
+entity ingredient_sources {
+  * id : bigint <<PK>>
+  --
+  restaurant_id : bigint <<FK>>
+  source_type : varchar
+  status : varchar
+}
+
+entity profile_videos {
+  * id : bigint <<PK>>
+  --
+  restaurant_id : bigint <<FK>>
+  media_upload_session_id : uuid <<FK,UQ>>
+  type : varchar
+  status : varchar
+}
+
+entity recent_proofs {
+  * id : bigint <<PK>>
+  --
+  restaurant_id : bigint <<FK>>
+  media_upload_session_id : uuid <<FK,UQ>>
+  proof_type : varchar
+  media_kind : varchar
+  status : varchar
+}
+
+entity media_upload_sessions {
+  * id : uuid <<PK>>
+  --
+  owner_id : bigint <<FK>>
+  restaurant_id : bigint <<FK>>
+  purpose : varchar
+  resource_type : varchar
+  expected_public_id : varchar <<UQ>>
+  expires_at : timestamptz
+  status : varchar
+}
+
+users ||--o| restaurants : owner_id
+users ||--o{ refresh_tokens : user_id
+restaurants ||--o{ dishes : restaurant_id
+restaurants ||--o{ ingredient_sources : restaurant_id
+restaurants ||--o{ profile_videos : restaurant_id
+restaurants ||--o{ recent_proofs : restaurant_id
+users ||--o{ media_upload_sessions : owner_id
+restaurants ||--o{ media_upload_sessions : restaurant_id
+media_upload_sessions ||--o| profile_videos : media_upload_session_id
+media_upload_sessions ||--o| recent_proofs : media_upload_session_id
+@enduml

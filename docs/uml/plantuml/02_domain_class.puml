@@ -1,0 +1,103 @@
+@startuml
+title DOMAIN CLASS DIAGRAM - BẾP MỞ
+top to bottom direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 85
+skinparam ranksep 100
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.4
+skinparam NoteFontSize 14
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam class {
+  FontSize 15
+  AttributeFontSize 14
+  BackgroundColor #F7FAFC
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+hide methods
+
+class User {
+  id: Long
+  email: String
+  role: RESTAURANT_OWNER | ADMIN
+  status: ACTIVE | DISABLED
+}
+
+class RefreshToken {
+  id: Long
+  tokenHash: String
+  expiresAt: Instant
+  revokedAt: Instant?
+}
+
+class Restaurant {
+  id: Long
+  ownerId: Long {unique}
+  name: String
+  status: ACTIVE | HIDDEN
+}
+
+class Dish {
+  id: Long
+  restaurantId: Long
+  name: String
+  isAvailable: Boolean
+}
+
+class IngredientSource {
+  id: Long
+  restaurantId: Long
+  sourceType: Enum
+  status: ACTIVE | HIDDEN | DELETED
+}
+
+class ProfileVideo {
+  id: Long
+  restaurantId: Long
+  mediaUploadSessionId: UUID
+  type: Enum
+  status: ACTIVE | REPLACED | HIDDEN | DELETED
+}
+
+class RecentProof {
+  id: Long
+  restaurantId: Long
+  mediaUploadSessionId: UUID
+  proofType: Enum
+  mediaKind: IMAGE | VIDEO
+  status: ACTIVE | HIDDEN | DELETED
+}
+
+class MediaUploadSession {
+  id: UUID
+  ownerId: Long
+  restaurantId: Long
+  purpose: Enum
+  resourceType: Enum
+  expiresAt: Instant
+  status: ISSUED | VALIDATED | CONSUMED | REJECTED | EXPIRED
+}
+
+User "1" -- "0..1" Restaurant : sở hữu
+User "1" -- "0..*" RefreshToken : duy trì phiên
+Restaurant "1" -- "0..*" Dish
+Restaurant "1" -- "0..*" IngredientSource
+Restaurant "1" -- "0..*" ProfileVideo
+Restaurant "1" -- "0..*" RecentProof
+User "1" -- "0..*" MediaUploadSession : được cấp cho
+Restaurant "1" -- "0..*" MediaUploadSession
+MediaUploadSession "1" -- "0..1" ProfileVideo : finalize
+MediaUploadSession "1" -- "0..1" RecentProof : finalize
+
+note bottom of Restaurant
+  TransparencyScore được tính on-demand từ dữ liệu ACTIVE
+  và chỉ cache tạm trong Redis; không có entity/bảng điểm riêng.
+end note
+@enduml

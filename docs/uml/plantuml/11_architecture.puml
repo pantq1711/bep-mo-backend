@@ -1,0 +1,53 @@
+@startuml
+title KIẾN TRÚC TỔNG THỂ HỆ THỐNG BẾP MỞ
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 80
+skinparam ranksep 100
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.5
+skinparam ComponentFontSize 15
+skinparam RectangleFontSize 16
+skinparam DatabaseFontSize 15
+skinparam CloudFontSize 15
+skinparam NoteFontSize 14
+skinparam linetype ortho
+
+rectangle "Browser / React 19.2.7\nVite 8.1.1 - dev/default: 5173" as FE
+
+rectangle "Spring Boot 3.3.0 - Port 8080\nMô tả kiến trúc: Modular Monolith" as BE {
+  component "Auth / Security" as Auth
+  component Restaurant
+  component Dish
+  component "Ingredient Source" as Source
+  component "Media Upload /\nVerification" as MediaCore
+  component "Profile Video /\nRecent Proof" as Evidence
+  component "Transparency Score" as Score
+  component Admin
+
+  Auth -[hidden]down-> Source
+  Restaurant -[hidden]down-> MediaCore
+  Dish -[hidden]down-> Evidence
+  Source -[hidden]down-> Score
+}
+
+database "PostgreSQL 16\nNguồn dữ liệu chính" as PG
+rectangle "Redis 7\nScore cache + JWT blacklist" as Redis
+cloud "Cloudinary\nMedia storage" as Cloudinary
+
+FE --> BE : REST/JSON + JWT
+BE --> PG : JPA + transaction
+BE ..> Redis : Cache/blacklist\nbest-effort
+FE --> Cloudinary : Signed direct upload
+BE --> Cloudinary : Trusted metadata
+
+note bottom of BE
+  Backend xác minh signature, version, public_id và metadata
+  trước khi publish tài nguyên vào PostgreSQL.
+end note
+@enduml

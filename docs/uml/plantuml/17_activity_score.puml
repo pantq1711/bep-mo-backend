@@ -1,0 +1,59 @@
+@startuml
+title ACTIVITY DIAGRAM - LẤY TRANSPARENCY SCORE
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 12
+skinparam nodesep 75
+skinparam ranksep 90
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.5
+skinparam NoteFontSize 14
+skinparam activity {
+  FontSize 15
+  DiamondFontSize 15
+  BackgroundColor #EAF2F8
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+
+start
+:Nhận yêu cầu lấy\nTransparency Score;
+
+if (Restaurant có thể xem?) then (Có)
+  :Đọc score cache\ntừ Redis;
+
+  if (Cache hợp lệ?) then (Có)
+    :Trả score từ cache;
+  else (Không)
+    if (Cache corrupt?) then (Có)
+      :Xóa riêng cache corrupt;
+    else (Miss / Redis down)
+      :Không xóa cache;
+    endif
+
+    :Khóa row restaurant;
+    :Đọc lại score cache\ntừ Redis;
+    if (Cache lần hai hợp lệ?) then (Có)
+      :Trả score từ cache;
+    else (Không)
+      :Đọc dữ liệu ACTIVE\ntừ PostgreSQL;
+      :Tính Completeness\nvà Freshness;
+      :Ghi cache với dynamic TTL\n(best-effort);
+      :Trả score vừa tính;
+    endif
+  endif
+
+else (Không)
+  :Trả 404 Not Found;
+endif
+
+stop
+
+note right
+  PostgreSQL là source of truth.
+  Redis lỗi không rollback nghiệp vụ.
+end note
+@enduml

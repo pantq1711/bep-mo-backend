@@ -1,0 +1,42 @@
+@startuml
+title DEPLOYMENT DIAGRAM - MÔI TRƯỜNG DEV / DEFAULT
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 90
+skinparam ranksep 105
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.5
+skinparam NodeFontSize 15
+skinparam DatabaseFontSize 15
+skinparam CloudFontSize 15
+skinparam ArtifactFontSize 15
+skinparam linetype ortho
+
+node "Môi trường người dùng\n(dev/default)" as UserMachine {
+  artifact "Browser\nlocalhost:5173 (dev/default)" as Browser
+}
+
+node "Môi trường phát triển\n(dev/default)" as DevMachine {
+  node "Frontend chạy riêng\nReact 19.2.7 / Vite 8.1.1\nPort 5173 (Vite default; không khóa cấu hình)" as FE
+
+  node "Docker Compose backend" as Compose {
+    node "Spring Boot 3.3.0\nPort 8080" as BE
+    database "PostgreSQL 16\nPersistent volume" as PG
+    node "Redis 7\nHost 6380 -> Container 6379" as Redis
+  }
+}
+
+cloud "Cloudinary\nUpload API + Admin API" as Cloudinary
+
+Browser --> FE : HTTP
+FE --> BE : REST /api/v1 + JWT
+BE --> PG : JDBC / transaction
+BE --> Redis : Cache + blacklist\n(best-effort)
+Browser --> Cloudinary : HTTPS signed\ndirect upload
+BE --> Cloudinary : HTTPS trusted\nmetadata verification
+@enduml

@@ -1,0 +1,77 @@
+@startuml
+title CLASS DIAGRAM - TRANSPARENCY EVIDENCE
+top to bottom direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 80
+skinparam ranksep 95
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.4
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam class {
+  FontSize 15
+  AttributeFontSize 14
+  BackgroundColor #F7FAFC
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+
+class ProfileVideoService {
+  + upload(Long restaurantId, Long ownerId, UploadVideoRequest request)
+  + hide(Long restaurantId, Long videoId, Long ownerId)
+  + delete(Long restaurantId, Long videoId, Long ownerId)
+  + listActive(Long restaurantId, Long currentUserId)
+}
+
+class RecentProofService {
+  + create(Long restaurantId, Long ownerId, CreateRecentProofRequest request)
+  + delete(Long restaurantId, Long proofId, Long ownerId)
+  + listRecentActive(Long restaurantId, Long currentUserId)
+}
+
+class IngredientSourceService {
+  + create(Long restaurantId, Long ownerId, CreateIngredientSourceRequest request)
+  + update(Long restaurantId, Long sourceId, Long ownerId, UpdateIngredientSourceRequest request)
+  + delete(Long restaurantId, Long sourceId, Long ownerId)
+  + listActive(Long restaurantId, Long currentUserId)
+}
+
+class MediaUploadSessionService {
+  + issue(ownerId, request)
+  + requireAuthorizedForPublish(UUID sessionId, Long ownerId, Long restaurantId, MediaUploadPurpose expectedPurpose)
+  + assertBinding(MediaUploadSession session, Long ownerId, Long restaurantId, MediaUploadPurpose expectedPurpose)
+}
+
+class MediaVerificationService {
+  + verify(MediaUploadSession session, long responseVersion, String responseSignature)
+}
+
+class ProfileVideoFinalizationService {
+  + finalizeUpload(Long restaurantId, Long ownerId, UUID uploadSessionId, TrustedMediaMetadata metadata)
+}
+
+class RecentProofFinalizationService {
+  + finalizeUpload(Long restaurantId, Long ownerId, UUID uploadSessionId, TrustedMediaMetadata metadata, String note)
+}
+
+class CloudinaryMediaGateway
+
+ProfileVideoService --> MediaUploadSessionService
+RecentProofService --> MediaUploadSessionService
+ProfileVideoService --> MediaVerificationService
+RecentProofService --> MediaVerificationService
+MediaVerificationService --> CloudinaryMediaGateway
+ProfileVideoService --> ProfileVideoFinalizationService
+RecentProofService --> RecentProofFinalizationService
+IngredientSourceService -[hidden]right-> MediaUploadSessionService
+
+note bottom of MediaVerificationService
+  Xác minh trusted metadata tại backend trước khi publish.
+  Client-side validation không phải trust boundary.
+end note
+@enduml

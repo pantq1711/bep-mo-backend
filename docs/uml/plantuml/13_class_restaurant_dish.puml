@@ -1,0 +1,57 @@
+@startuml
+title CLASS DIAGRAM - RESTAURANT / DISH
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam nodesep 90
+skinparam ranksep 100
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.4
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam class {
+  FontSize 15
+  AttributeFontSize 14
+  BackgroundColor #F7FAFC
+  BorderColor #1F4E79
+  ArrowColor #1F4E79
+}
+
+class RestaurantController {
+  + create(Long currentUserId, CreateRestaurantRequest request)
+  + getMine(Long currentUserId)
+  + update(Long currentUserId, Long restaurantId, UpdateRestaurantRequest request)
+  + get(Long restaurantId)
+}
+
+class RestaurantService {
+  + create(Long ownerId, CreateRestaurantRequest request)
+  + getMyRestaurant()
+  + update(Long restaurantId, Long ownerId, UpdateRestaurantRequest request)
+  + lockRestaurantForUpdate(id)
+}
+
+class DishService {
+  + create(Long restaurantId, Long ownerId, CreateDishRequest request)
+  + update(Long restaurantId, Long dishId, Long ownerId, UpdateDishRequest request)
+  + setAvailability(Long restaurantId, Long dishId, Long ownerId, boolean available)
+  + delete(Long restaurantId, Long dishId, Long ownerId)
+}
+
+interface RestaurantRepository
+interface DishRepository
+
+RestaurantController --> RestaurantService : gọi
+RestaurantService --> RestaurantRepository : ownership + row lock
+DishService --> RestaurantService : ownership; row lock khi update / availability / delete
+DishService --> DishRepository : CRUD món ăn
+
+note bottom of DishService
+  Update / setAvailability / delete khóa theo restaurant -> dish.
+  Create chỉ kiểm tra ownership, không row-lock restaurant.
+end note
+@enduml

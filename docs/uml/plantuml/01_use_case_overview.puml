@@ -1,0 +1,54 @@
+@startuml
+title USE CASE TỔNG QUÁT - HỆ THỐNG BẾP MỞ
+left to right direction
+
+' Tối ưu cho VPasCode và màn hình trình chiếu
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 12
+skinparam nodesep 90
+skinparam ranksep 95
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.5
+skinparam ActorFontSize 15
+skinparam UsecaseFontSize 15
+skinparam RectangleFontSize 16
+skinparam NoteFontSize 14
+skinparam linetype ortho
+
+actor "Khách truy cập" as Visitor
+actor "Chủ quán" as Owner
+actor "Quản trị viên" as Admin
+
+rectangle "Nền tảng hồ sơ minh bạch Bếp Mở" as System {
+  usecase "Xem danh sách và\nhồ sơ công khai" as UC1
+  usecase "Xem món ăn, video,\nnguồn và bằng chứng gần đây" as UC2
+  usecase "Xem Transparency Score" as UC3
+
+  usecase "Đăng ký / Đăng nhập /\nRefresh / Logout" as UC4
+  usecase "Quản lý hồ sơ quán\nvà món ăn" as UC5
+  usecase "Quản lý nguồn nguyên liệu,\nvideo và Recent Proof" as UC6
+
+  usecase "Kiểm duyệt nhà hàng,\ntài nguyên và người dùng" as UC7
+
+  UC1 -[hidden]down-> UC3
+  UC2 -[hidden]down-> UC4
+  UC4 -[hidden]down-> UC6
+}
+
+Visitor --> UC1
+Visitor --> UC2
+Visitor --> UC3
+Owner --> UC4
+Owner --> UC5
+Owner --> UC6
+Admin --> UC7
+
+note bottom of System
+  Mô tả ý nghĩa sản phẩm; không phải rule thực thi trong code:
+  Transparency Score phản ánh mức độ công khai dữ liệu;
+  không phải điểm vệ sinh hoặc chứng nhận VSATTP.
+end note
+@enduml

@@ -1,0 +1,54 @@
+@startuml
+title USE CASE CHI TIẾT - RESTAURANT OWNER
+left to right direction
+
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam shadowing false
+skinparam roundcorner 12
+skinparam nodesep 90
+skinparam ranksep 90
+skinparam ArrowFontSize 14
+skinparam ArrowThickness 1.5
+skinparam ActorFontSize 15
+skinparam UsecaseFontSize 15
+skinparam RectangleFontSize 16
+skinparam NoteFontSize 14
+skinparam linetype ortho
+
+actor "Chủ quán" as Owner
+
+rectangle "Chức năng Restaurant Owner" as OwnerSystem {
+  usecase "Đăng ký / Đăng nhập" as U1
+  usecase "Refresh / Logout" as U2
+  usecase "Tạo hoặc cập nhật\nhồ sơ quán" as U3
+  usecase "Quản lý món ăn" as U4
+  usecase "Quản lý nguồn\nnguyên liệu" as U5
+  usecase "Upload hoặc thay thế\nProfile Video" as U6
+  usecase "Upload Recent Proof" as U7
+  usecase "Xem hồ sơ public\nvà Transparency Score" as U8
+
+  U1 -[hidden]down-> U3
+  U2 -[hidden]down-> U4
+  U3 -[hidden]down-> U5
+  U4 -[hidden]down-> U6
+  U5 -[hidden]down-> U7
+  U6 -[hidden]down-> U8
+}
+
+Owner --> U1
+Owner --> U2
+Owner --> U3
+Owner --> U4
+Owner --> U5
+Owner --> U6
+Owner --> U7
+Owner --> U8
+
+note bottom of OwnerSystem
+  Mỗi OWNER quản lý tối đa một restaurant.
+  Owner có thể ẩn/xóa ProfileVideo; IngredientSource và RecentProof chỉ có delete.
+  Owner không có endpoint unhide; unhide chỉ dành cho Admin.
+end note
+@enduml
